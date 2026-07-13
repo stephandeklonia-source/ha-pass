@@ -251,6 +251,7 @@ async def activate_token(token_id: str, _: str = Depends(require_admin)) -> dict
             detail="Token is not on a delayed start",
         )
     await db.activate_token_now(token_id)
+    await ha_client.broadcast_token_activated(token_id)
     row = await db.get_token_by_id(token_id)
     return _row_to_response(row)
 
