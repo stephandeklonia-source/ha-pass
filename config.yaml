@@ -33,4 +33,4 @@ schema:
   brand_bg: str
   brand_primary: str
   guest_url: "str?"
-image: "ghcr.io/rohithkadaveru/ha-pass"
+# image: "ghcr.io/rohithkadaveru/ha-pass"
