@@ -357,17 +357,32 @@ function connectSSE() {
   const badge = document.getElementById('conn-badge');
   const dot = document.getElementById('conn-dot');
   const text = document.getElementById('conn-text');
-  badge.className = 'inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-500/10 text-amber-500';
-  dot.className = 'w-1.5 h-1.5 rounded-full bg-current';
-  text.textContent = 'Connecting';
+
+  // While pending, the connection only exists to catch an early
+  // activation — there's no live session yet, so don't claim "Live".
+  function setBadge(cls, dotCls, label) {
+    if (previewMode) { badge.classList.add('hidden'); return; }
+    badge.classList.remove('hidden');
+    badge.className = cls;
+    dot.className = dotCls;
+    text.textContent = label;
+  }
+
+  setBadge(
+    'inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-500/10 text-amber-500',
+    'w-1.5 h-1.5 rounded-full bg-current',
+    'Connecting'
+  );
 
   eventSource = new EventSource(`/g/${SLUG}/stream`);
 
   eventSource.addEventListener('connected', () => {
     const wasReconnect = sseRetryCount > 0;
-    badge.className = 'inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-ink/10 text-ink';
-    dot.className = 'w-1.5 h-1.5 rounded-full bg-current ping-dot';
-    text.textContent = 'Live';
+    setBadge(
+      'inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-ink/10 text-ink',
+      'w-1.5 h-1.5 rounded-full bg-current ping-dot',
+      'Live'
+    );
     sseRetryCount = 0;
     if (wasReconnect && !previewMode) refetchState();
   });
@@ -389,9 +404,11 @@ function connectSSE() {
   });
 
   eventSource.onerror = () => {
-    badge.className = 'inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-primary/10 text-primary';
-    dot.className = 'w-1.5 h-1.5 rounded-full bg-current';
-    text.textContent = 'Offline';
+    setBadge(
+      'inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-primary/10 text-primary',
+      'w-1.5 h-1.5 rounded-full bg-current',
+      'Offline'
+    );
     sseRetryCount++;
   };
 

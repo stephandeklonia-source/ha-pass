@@ -6,6 +6,14 @@ through the latest state of this fork's `main` branch.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.8] — fork release
+
+### Fixed
+- The connection badge no longer shows "Live" while a token is still on
+  its delayed start — it's hidden during the pending preview instead,
+  since nothing live is actually connected yet, and reappears normally
+  once the guest's access window opens.
+
 ## [0.2.7] — fork release
 
 ### Changed
