@@ -365,6 +365,32 @@ async def test_guest_pwa_ip_allowlist_blocks_non_matching(client, mock_ha_client
 
 
 # ---------------------------------------------------------------------------
+# Pending (delayed start) preview — no live HA state before the window opens
+# ---------------------------------------------------------------------------
+
+async def test_pending_token_page_ships_entity_ids_but_no_ha_call(client, mock_ha_client, test_db):
+    """A pending token's page includes its entity IDs for a static preview,
+    but never touches Home Assistant to fetch real state."""
+    now = int(time.time())
+    await db.create_token(
+        label="Pending", slug="pending-preview", entity_ids=["light.kitchen"],
+        expires_at=now + 7200, ip_allowlist=None, starts_at=now + 3600,
+    )
+    resp = await client.get("/g/pending-preview")
+    assert resp.status_code == 200
+    assert "light.kitchen" in resp.text
+    mock_ha_client["get_states"].assert_not_called()
+
+
+async def test_active_token_page_does_not_ship_preview_entity_ids(client, sample_token, mock_ha_client):
+    """Once active (no delayed start), the page has no preview payload —
+    the real entity list comes from the /state endpoint instead."""
+    resp = await client.get(f"/g/{sample_token['slug']}")
+    assert resp.status_code == 200
+    assert "PREVIEW_ENTITY_IDS = []" in resp.text
+
+
+# ---------------------------------------------------------------------------
 # Rate limiting — real rate_limiter singleton
 # ---------------------------------------------------------------------------
 
