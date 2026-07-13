@@ -153,7 +153,15 @@ async def create_token(
     if body.expires_in_seconds == NEVER_EXPIRES_SECONDS:
         expires_at = NEVER_EXPIRES_SECONDS
     else:
-        expires_at = int(time.time()) + body.expires_in_seconds
+        anchor = body.starts_at if body.starts_at else int(time.time())   # NEW
+        expires_at = anchor + body.expires_in_seconds                     # NEW
+    
+    # Sanity check: expiry must be after start (NEW)
+    if body.starts_at and expires_at <= body.starts_at:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Expiry must be after the start time",
+        )
 
     # Ensure slug uniqueness
     existing = await db.get_token_by_slug(slug)
