@@ -177,9 +177,7 @@ def _schedule_page_load_activity(background_tasks: BackgroundTasks, row) -> None
 @router.get("/{slug}", response_class=HTMLResponse)
 async def guest_pwa(background_tasks: BackgroundTasks, request: Request, slug: str = Path(max_length=64)):
     row = await db.get_token_by_slug(slug)
-    expired = False
-    if not row or row["revoked"] or row["expires_at"] <= int(time.time()):
-        expired = True
+    expired = not row or row["revoked"] or row["expires_at"] <= int(time.time())
 
     if expired:
         ctx = base_context(request)
@@ -192,18 +190,27 @@ async def guest_pwa(background_tasks: BackgroundTasks, request: Request, slug: s
         ctx = base_context(request)
         ctx.update({"slug": slug, "contact_message": settings.contact_message})
         return templates.TemplateResponse(request, "expired.html", ctx, status_code=exc.status_code)
-    await db.touch_token(row["id"])
-    await db.log_access(
-        token_id=row["id"],
-        event_type="page_load",
-        ip_address=_client_ip(request),
-        user_agent=request.headers.get("User-Agent"),
-    )
-    _schedule_page_load_activity(background_tasks, row)
+
+    now = int(time.time())
+    pending = bool(row["starts_at"] and row["starts_at"] > now)   # NEW
+
+    # Don't count a pre-window visit as "used" — skip touch/log/activity while pending
+    if not pending:
+        await db.touch_token(row["id"])
+        await db.log_access(
+            token_id=row["id"],
+            event_type="page_load",
+            ip_address=_client_ip(request),
+            user_agent=request.headers.get("User-Agent"),
+        )
+        _schedule_page_load_activity(background_tasks, row)
+
     ctx = base_context(request)
     ctx.update({
         "slug": slug,
         "label": row["label"],
+        "pending": pending,                                        # NEW
+        "starts_at": row["starts_at"] if pending else None,        # NEW
         "expires_at": row["expires_at"],
         "contact_message": settings.contact_message,
         "never_expires": NEVER_EXPIRES_SECONDS,
