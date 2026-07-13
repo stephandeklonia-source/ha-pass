@@ -164,6 +164,16 @@
   <p class="text-muted max-w-xs">Your guest session has ended. {{ contact_message }}</p>
 </div>
 
+<!-- Pending overlay (NEW) -->
+<div id="pending-overlay" aria-live="assertive" class="{{ 'flex' if pending else 'hidden' }} fixed inset-0 z-50 bg-bg-light dark:bg-bg-dark flex-col items-center justify-center text-center p-8 gap-4">
+  <div class="w-20 h-20 rounded-full bg-soot/5 dark:bg-white/5 flex items-center justify-center">
+    <span aria-hidden="true" class="material-symbols-outlined text-4xl text-muted">hourglass_top</span>
+  </div>
+  <h2 class="text-2xl font-serif">Not Active Yet</h2>
+  <p class="text-muted max-w-xs">Access opens in</p>
+  <p id="pending-timer" class="text-3xl font-mono font-bold tabular-nums text-accent"></p>
+</div>
+
 <!-- Confirm bottom sheet -->
 <div class="fixed inset-0 z-40 hidden items-end justify-center bg-soot/40 dark:bg-black/50 backdrop-blur-sm" id="sheet-backdrop">
   <div class="sheet-animate bg-surface-light dark:bg-surface-dark rounded-t-2xl p-6 w-full max-w-lg text-center" role="dialog" aria-modal="true" aria-labelledby="sheet-title" style="padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));">
