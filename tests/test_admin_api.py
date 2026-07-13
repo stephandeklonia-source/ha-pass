@@ -447,6 +447,9 @@ async def test_activate_pending_token_clears_starts_at(client, admin_session, te
     row = await db.get_token_by_id(token["id"])
     assert row["starts_at"] is None
 
+    # Verify SSE broadcast was triggered, so an already-open guest tab unlocks
+    mock_ha_client["broadcast_token_activated"].assert_called_once_with(token["id"])
+
 
 async def test_activate_already_active_token_400(client, admin_session, sample_token, mock_ha_client):
     """A token that isn't on a delayed start cannot be 'activated'."""

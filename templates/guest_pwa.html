@@ -205,6 +205,7 @@ let states = {};
 let entityOrder = [];
 let sheetCallback = null;
 let sseRetryCount = 0;
+let eventSource = null;
 
 // ── Expiry Timer ─────────────────────────────────────────────────────
 const INITIAL_REMAINING = EXPIRES_AT - (Date.now() / 1000);
@@ -282,13 +283,18 @@ if (STARTS_AT) {
   document.querySelectorAll('button, input').forEach(el => el.disabled = true);
   const pendingTimerEl = document.getElementById('pending-timer');
 
+  function activateNow() {
+    clearInterval(pendingInterval);
+    if (eventSource) { eventSource.close(); eventSource = null; }
+    document.getElementById('pending-overlay').classList.add('hidden');
+    document.querySelectorAll('button, input').forEach(el => el.disabled = false);
+    init();
+  }
+
   function updatePending() {
     const remaining = STARTS_AT - (Date.now() / 1000);
     if (remaining <= 0) {
-      clearInterval(pendingInterval);
-      document.getElementById('pending-overlay').classList.add('hidden');
-      document.querySelectorAll('button, input').forEach(el => el.disabled = false);
-      init();
+      activateNow();
       return;
     }
     const h = Math.floor(remaining / 3600);
@@ -298,12 +304,16 @@ if (STARTS_AT) {
   }
   updatePending();
   var pendingInterval = setInterval(updatePending, 1000);
+
+  // Listen for an admin skipping the delayed start so an already-open tab
+  // unlocks immediately instead of waiting out the local countdown.
+  connectSSE();
+  eventSource.addEventListener('token_activated', activateNow);
 } else {
   init();
 }
 
 // ── SSE ──────────────────────────────────────────────────────────────
-let eventSource = null;
 function connectSSE() {
   const badge = document.getElementById('conn-badge');
   const dot = document.getElementById('conn-dot');

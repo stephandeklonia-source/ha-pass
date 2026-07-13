@@ -67,6 +67,7 @@ def mock_ha_client():
         "fire_event": AsyncMock(return_value={}),
         "logbook_log": AsyncMock(return_value={}),
         "broadcast_token_expired": AsyncMock(),
+        "broadcast_token_activated": AsyncMock(),
         "invalidate_entity_cache": AsyncMock(),
     }
     with patch.multiple("app.ha_client", **mocks):

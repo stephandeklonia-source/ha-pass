@@ -39,7 +39,7 @@ SSE_KEEPALIVE_SECONDS = 25
 COMMAND_RPM = 30
 
 # L-8: Whitelist of allowed SSE event types
-_ALLOWED_SSE_EVENTS = {"state_change", "token_expired", "reconnected"}
+_ALLOWED_SSE_EVENTS = {"state_change", "token_expired", "token_activated", "reconnected"}
 
 # M-27: Simple TTL cache for HA state list
 _states_cache: list[dict] | None = None

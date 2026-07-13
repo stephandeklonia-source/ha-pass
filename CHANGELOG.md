@@ -6,6 +6,14 @@ through the latest state of this fork's `main` branch.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.6] — fork release
+
+### Fixed
+- **Activate Now** no longer leaves an already-open guest tab stuck on its
+  countdown: the admin action now pushes a `token_activated` event over the
+  guest's SSE connection, so the pending screen unlocks immediately instead
+  of only updating on the tab's own timer or a manual page reload.
+
 ## [0.2.5] — fork release
 
 Changes made in this fork on top of upstream `v0.2.4`, not present upstream.
