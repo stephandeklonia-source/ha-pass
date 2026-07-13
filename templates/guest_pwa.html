@@ -200,6 +200,7 @@ requestAnimationFrame(updateThemeToggles);
 const SLUG = {{ slug | tojson }};
 const EXPIRES_AT = {{ expires_at | tojson }};
 const NEVER_EXPIRES = {{ never_expires }};
+const STARTS_AT = {{ (starts_at | tojson) if pending else 'null' }};   // NEW
 let states = {};
 let entityOrder = [];
 let sheetCallback = null;
@@ -274,6 +275,31 @@ async function init() {
     document.getElementById('cards-container').innerHTML =
       `<div class="flex flex-col items-center py-16 text-primary text-sm"><span aria-hidden="true" class="material-symbols-outlined text-3xl mb-2">error</span>Failed to load devices.<br><small class="text-muted">${esc(e.message)}</small></div>`;
   }
+}
+
+// ── Pending (valid-from) Timer ──────────────────────────────────────── NEW
+if (STARTS_AT) {
+  document.querySelectorAll('button, input').forEach(el => el.disabled = true);
+  const pendingTimerEl = document.getElementById('pending-timer');
+
+  function updatePending() {
+    const remaining = STARTS_AT - (Date.now() / 1000);
+    if (remaining <= 0) {
+      clearInterval(pendingInterval);
+      document.getElementById('pending-overlay').classList.add('hidden');
+      document.querySelectorAll('button, input').forEach(el => el.disabled = false);
+      init();
+      return;
+    }
+    const h = Math.floor(remaining / 3600);
+    const m = Math.floor((remaining % 3600) / 60);
+    const s = Math.floor(remaining % 60);
+    pendingTimerEl.textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  }
+  updatePending();
+  var pendingInterval = setInterval(updatePending, 1000);
+} else {
+  init();
 }
 
 // ── SSE ──────────────────────────────────────────────────────────────
