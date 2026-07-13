@@ -169,6 +169,7 @@ async def create_token(
         entity_ids=body.entity_ids,
         expires_at=expires_at,
         ip_allowlist=body.ip_allowlist,
+        starts_at=body.starts_at,             # NEW
     )
     entity_ids = await db.get_token_entities(row["id"])
     return _row_to_response(row, entity_ids)
