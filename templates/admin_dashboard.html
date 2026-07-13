@@ -462,8 +462,9 @@ function toggleActivity() {
 
 function tokenStatus(t) {
   if (t.revoked) return 'revoked';
-  if (t.expires_at >= NEVER_EXPIRES) return 'active';
   const now = Date.now() / 1000;
+  if (t.starts_at && t.starts_at > now) return 'pending';
+  if (t.expires_at >= NEVER_EXPIRES) return 'active';
   if (t.expires_at < now) return 'expired';
   if ((t.expires_at - now) < 3600) return 'expiring';
   return 'active';
@@ -491,7 +492,7 @@ function updateStats() {
   tokens.forEach(t => {
     const s = tokenStatus(t);
     if (s === 'active' || s === 'expiring') active++;
-    else expired++;
+    else if (s !== 'pending') expired++;
   });
   document.getElementById('stat-active').textContent = active;
   document.getElementById('stat-expired').textContent = expired;
@@ -508,16 +509,17 @@ function renderTokens() {
     return;
   }
 
-  const order = { active: 0, expiring: 1, expired: 2, revoked: 3 };
+  const order = { pending: 0, active: 1, expiring: 2, expired: 3, revoked: 4 };
   const sorted = [...tokens].sort((a, b) => order[tokenStatus(a)] - order[tokenStatus(b)]);
 
   grid.innerHTML = sorted.map(t => {
     const status = tokenStatus(t);
     const url = guestLink(t.slug);
-    const isActive = status === 'active' || status === 'expiring';
+    const isActive = status === 'active' || status === 'expiring' || status === 'pending';
     const lastAccess = t.last_accessed ? relativeTime(t.last_accessed) : 'Never';
 
     const badges = {
+      pending: { label: 'Scheduled', icon: 'hourglass_top', dotClass: 'text-violet-600', bgClass: 'bg-violet-500/10 text-violet-600 dark:text-violet-400' },
       active: { label: 'Active', icon: 'circle', dotClass: 'pulse-dot text-ink', bgClass: 'bg-ink/10 text-ink' },
       expiring: { label: 'Expiring', icon: 'schedule', dotClass: 'text-amber-600', bgClass: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
       expired: { label: 'Expired', icon: 'timer_off', dotClass: 'text-muted', bgClass: 'bg-soot/5 dark:bg-white/5 text-muted' },
@@ -527,7 +529,8 @@ function renderTokens() {
     const expiryAction = status === 'expired' || status === 'revoked' ? 'Renew' : 'Extend';
     const expiryIcon = expiryAction === 'Renew' ? 'autorenew' : 'update';
 
-    const stripClass = status === 'active' ? 'from-ink to-blue-400'
+    const stripClass = status === 'pending' ? 'from-violet-400 to-indigo-400'
+      : status === 'active' ? 'from-ink to-blue-400'
       : status === 'expiring' ? 'from-accent to-amber-400'
       : 'from-gray-300 to-gray-400 dark:from-gray-600 dark:to-gray-700';
 
@@ -586,7 +589,7 @@ function renderTokens() {
           </div>
           <div class="flex items-center gap-2 text-muted">
             <span aria-hidden="true" class="material-symbols-outlined text-base">timer</span>
-            <span>Expires ${relativeTime(t.expires_at)}</span>
+            <span>${status === 'pending' ? `Starts ${relativeTime(t.starts_at)}` : `Expires ${relativeTime(t.expires_at)}`}</span>
           </div>
           <div class="flex items-center gap-2 text-muted">
             <span aria-hidden="true" class="material-symbols-outlined text-base">history</span>
@@ -598,6 +601,10 @@ function renderTokens() {
           </div>
         </div>
 
+        ${status === 'pending' ? `<button data-id="${esc(t.id)}" data-action="activate-token"
+          class="w-full flex items-center justify-center gap-1.5 py-2 mb-2 rounded-xl text-xs font-display font-medium bg-violet-500/10 text-violet-600 dark:text-violet-400 hover:bg-violet-500/20 transition-colors">
+          <span aria-hidden="true" class="material-symbols-outlined text-sm">bolt</span> Activate Now
+        </button>` : ''}
         <div class="grid grid-cols-3 gap-2">
           <button data-url="${esc(url)}" data-action="copy-url"
             class="flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-display font-medium border border-border-light dark:border-border-dark hover:bg-soot/5 dark:hover:bg-white/5 transition-colors">
@@ -917,6 +924,15 @@ async function confirmRevoke(id) {
   });
 }
 
+async function activateToken(id) {
+  const r = await fetch(`${BASE}/admin/tokens/${id}/activate`, {method: 'POST'});
+  if (r.ok) { showToast('Token activated', 'success'); loadTokens(); loadActivity(); }
+  else {
+    const err = await r.json().catch(() => ({}));
+    showToast(err.detail || 'Error activating token', 'error');
+  }
+}
+
 async function confirmDelete(id) {
   openConfirmModal('Delete Token', 'This will permanently remove the token record.', async () => {
     const r = await fetch(`${BASE}/admin/tokens/${id}`, {method: 'DELETE'});
@@ -1186,6 +1202,7 @@ document.addEventListener('click', e => {
     // Token actions
     case 'copy-url': copyUrl(el.dataset.url); break;
     case 'show-qr': showQr(el.dataset.url); break;
+    case 'activate-token': activateToken(el.dataset.id); break;
     case 'confirm-revoke': confirmRevoke(el.dataset.id); break;
     case 'confirm-delete': confirmDelete(el.dataset.id); break;
 
