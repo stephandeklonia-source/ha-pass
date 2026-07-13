@@ -97,6 +97,7 @@ def _row_to_response(row: Any, entity_ids: list[str] | None = None) -> dict:
         "slug": row["slug"],
         "label": row["label"],
         "created_at": row["created_at"],
+        "starts_at": row["starts_at"],
         "expires_at": row["expires_at"],
         "revoked": bool(row["revoked"]),
         "last_accessed": row["last_accessed"],
@@ -230,6 +231,26 @@ async def update_token_expiry(
     # Un-revoke if the token was revoked (admin is explicitly renewing it)
     if row["revoked"]:
         await db.unrevoke_token(token_id)
+    row = await db.get_token_by_id(token_id)
+    return _row_to_response(row)
+
+
+@router.post("/tokens/{token_id}/activate")
+async def activate_token(token_id: str, _: str = Depends(require_admin)) -> dict:
+    row = await db.get_token_by_id(token_id)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    if row["revoked"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot activate a revoked token",
+        )
+    if not row["starts_at"] or row["starts_at"] <= int(time.time()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token is not on a delayed start",
+        )
+    await db.activate_token_now(token_id)
     row = await db.get_token_by_id(token_id)
     return _row_to_response(row)
 
