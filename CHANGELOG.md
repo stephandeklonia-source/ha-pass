@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [0.2.7] — fork release
 
+### Changed
+- Published container images to `ghcr.io/stephandeklonia-source/ha-pass`
+  and pointed `config.yaml` at it, so Home Assistant pulls a prebuilt image
+  on update instead of rebuilding from source on every install/update.
+  Built and pushed by CI on every `v*.*.*` tag.
+
 ### Added
 - Guests on a delayed start now see a live-looking preview of their device
   list (names, icons, greyed out) instead of a full-screen "not active yet"
