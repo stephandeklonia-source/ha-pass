@@ -197,6 +197,14 @@
         </div>
       </div>
       <div>
+        <label for="f-starts" class="block text-xs font-mono uppercase tracking-wider text-muted mb-1.5">
+          Valid From <span class="text-muted/60 normal-case tracking-normal">(optional)</span>
+        </label>
+        <input id="f-starts" type="datetime-local"
+          class="w-full px-3 py-2.5 rounded-xl border border-border-light dark:border-border-dark bg-bg-light dark:bg-bg-dark text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
+        <p id="f-starts-error" class="hidden text-xs text-primary mt-1">Start time must be before the expiry time.</p>
+      </div>
+      <div>
         <label for="f-ip" class="block text-xs font-mono uppercase tracking-wider text-muted mb-1.5">IP Allowlist</label>
         <input id="f-ip" type="text" placeholder="192.168.1.0/24"
           class="w-full px-3 py-2.5 rounded-xl border border-border-light dark:border-border-dark bg-bg-light dark:bg-bg-dark text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
@@ -740,6 +748,8 @@ function openCreateModal(preset = {}) {
   document.getElementById('f-never-warn').classList.add('hidden');
   document.getElementById('f-custom-error').classList.add('hidden');
   document.getElementById('f-custom-datetime').value = '';
+  document.getElementById('f-starts').value = '';
+  document.getElementById('f-starts-error').classList.add('hidden');
   toggleCustomExpiry('f');
   renderPicker('create-picker', createPicker);
   openModal('create-modal');
@@ -750,6 +760,7 @@ async function submitCreate() {
   const label = document.getElementById('f-label').value.trim();
   const slug = document.getElementById('f-slug').value.trim() || null;
   const expiresIn = getExpirySeconds('f');
+  const startsAt = getStartsAt();                                    // NEW
   const ipRaw = document.getElementById('f-ip').value.trim();
   const ipList = ipRaw ? ipRaw.split(',').map(s => s.trim()).filter(Boolean) : null;
   const errEl = document.getElementById('create-error');
@@ -757,15 +768,20 @@ async function submitCreate() {
   if (!label) { errEl.textContent = 'Label is required.'; return; }
   if (expiresIn === null) { errEl.textContent = 'Invalid expiry date. Must be in the future.'; return; }
   if (createPicker.selected.size === 0) { errEl.textContent = 'Select at least one entity.'; return; }
+  if (startsAt !== null && startsAt >= (Date.now() / 1000) + expiresIn) {   // NEW
+    document.getElementById('f-starts-error').classList.remove('hidden');
+    return;
+  }
 
   const body = {
     label, slug,
     entity_ids: [...createPicker.selected],
+    starts_at: startsAt,          // NEW
     expires_in_seconds: expiresIn,
     ip_allowlist: ipList,
   };
 
-    const r = await fetch(`${BASE}/admin/tokens`, {
+  const r = await fetch(`${BASE}/admin/tokens`, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(body),
@@ -994,6 +1010,14 @@ function getExpirySeconds(prefix) {
     return seconds;
   }
   return parseInt(select.value);
+}
+
+function getStartsAt() {
+  const raw = document.getElementById('f-starts').value;
+  if (!raw) return null;
+  const dt = new Date(raw);
+  if (isNaN(dt.getTime())) return null;
+  return Math.floor(dt.getTime() / 1000);
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────
