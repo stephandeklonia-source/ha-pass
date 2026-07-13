@@ -95,6 +95,7 @@ async def create_token(
     entity_ids: list[str],
     expires_at: int,
     ip_allowlist: list[str] | None,
+    starts_at: int | None = None,         # NEW
 ) -> dict[str, Any]:
     db = await get_db()
     token_id = str(uuid.uuid4())
@@ -108,9 +109,9 @@ async def create_token(
         await db.execute("BEGIN IMMEDIATE")
         await db.execute(
             """INSERT INTO tokens
-               (id, slug, label, created_at, expires_at, ip_allowlist)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (token_id, slug, label, now, expires_at, ip_json),
+               (id, slug, label, created_at, starts_at, expires_at, ip_allowlist)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (token_id, slug, label, now, starts_at, expires_at, ip_json),
         )
         if entity_ids:
             await db.executemany(
