@@ -423,6 +423,55 @@ async def test_update_expired_token_expiry_renews(client, admin_session, test_db
 
 
 # ---------------------------------------------------------------------------
+# Token activation (skip delayed start) — real DB mutations
+# ---------------------------------------------------------------------------
+
+async def test_activate_pending_token_clears_starts_at(client, admin_session, test_db, mock_ha_client):
+    """A token on a delayed start can be activated immediately by an admin."""
+    now = int(time.time())
+    token = await db.create_token(
+        label="Delayed",
+        slug="delayed-token",
+        entity_ids=["light.a"],
+        expires_at=now + 7200,
+        ip_allowlist=None,
+        starts_at=now + 3600,
+    )
+
+    resp = await client.post(
+        f"/admin/tokens/{token['id']}/activate", cookies=admin_session
+    )
+    assert resp.status_code == 200
+    assert resp.json()["starts_at"] is None
+
+    row = await db.get_token_by_id(token["id"])
+    assert row["starts_at"] is None
+
+
+async def test_activate_already_active_token_400(client, admin_session, sample_token, mock_ha_client):
+    """A token that isn't on a delayed start cannot be 'activated'."""
+    resp = await client.post(
+        f"/admin/tokens/{sample_token['id']}/activate", cookies=admin_session
+    )
+    assert resp.status_code == 400
+
+
+async def test_activate_revoked_token_400(client, admin_session, sample_token, mock_ha_client):
+    await db.revoke_token(sample_token["id"])
+    resp = await client.post(
+        f"/admin/tokens/{sample_token['id']}/activate", cookies=admin_session
+    )
+    assert resp.status_code == 400
+
+
+async def test_activate_nonexistent_token_404(client, admin_session, mock_ha_client):
+    resp = await client.post(
+        "/admin/tokens/does-not-exist/activate", cookies=admin_session
+    )
+    assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # Token revoke & deletion — real DB mutations + SSE notification
 # ---------------------------------------------------------------------------
 

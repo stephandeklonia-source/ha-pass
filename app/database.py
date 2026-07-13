@@ -184,6 +184,15 @@ async def update_token_expiry(token_id: str, expires_at: int) -> None:
     await db.commit()
 
 
+async def activate_token_now(token_id: str) -> None:
+    db = await get_db()
+    await db.execute(
+        "UPDATE tokens SET starts_at = NULL WHERE id = ?",
+        (token_id,),
+    )
+    await db.commit()
+
+
 async def revoke_token(token_id: str) -> None:
     db = await get_db()
     await db.execute("UPDATE tokens SET revoked = 1 WHERE id = ?", (token_id,))
