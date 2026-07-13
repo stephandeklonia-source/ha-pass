@@ -35,6 +35,7 @@ class TokenCreateRequest(BaseModel):
     label: str = Field(..., min_length=1, max_length=200)
     slug: str | None = Field(default=None, pattern=r"^[a-z0-9_-]{1,64}$")
     entity_ids: list[str] = Field(..., min_length=1)
+    starts_at: int | None = None          # NEW — epoch seconds, None = active now
     expires_in_seconds: int = Field(..., gt=0)
     ip_allowlist: list[str] | None = None
 
@@ -58,6 +59,7 @@ class TokenResponse(BaseModel):
     slug: str
     label: str
     created_at: int
+    starts_at: int | None = None          # NEW
     expires_at: int
     revoked: bool
     last_accessed: int | None
