@@ -37,6 +37,24 @@ async def test_allowed_service_forwards_correct_args_to_ha(client, sample_token,
     assert args[2]["entity_id"] == "light.living_room"  # entity in payload
 
 
+async def test_light_turn_on_forwards_rgb_color_to_ha(client, sample_token, mock_ha_client):
+    """Extra light.turn_on data like rgb_color passes through untouched."""
+    resp = await client.post(
+        f"/g/{sample_token['slug']}/command",
+        json={
+            "entity_id": "light.living_room",
+            "service": "turn_on",
+            "data": {"rgb_color": [255, 0, 128]},
+        },
+    )
+    assert resp.status_code == 200
+
+    mock_ha_client["call_service"].assert_called_once()
+    args = mock_ha_client["call_service"].call_args[0]
+    assert args[2]["rgb_color"] == [255, 0, 128]
+    assert args[2]["entity_id"] == "light.living_room"
+
+
 async def test_allowed_service_writes_access_log(client, sample_token, mock_ha_client):
     """A successful command writes a row to the real access_log table."""
     await client.post(

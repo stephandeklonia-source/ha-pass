@@ -53,6 +53,15 @@
     border-radius: 50%; background: #fff; border: 1px solid var(--hex-muted-ui);
     box-shadow: 0 1px 4px rgba(0,0,0,.15); cursor: pointer;
   }
+  input[type="color"] {
+    -webkit-appearance: none; appearance: none; border: none; padding: 0;
+    width: 32px; height: 32px; border-radius: 9999px; cursor: pointer; background: none; flex-shrink: 0;
+  }
+  input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; border-radius: 9999px; }
+  input[type="color"]::-webkit-color-swatch { border: 1px solid var(--hex-muted-ui); border-radius: 9999px; }
+  input[type="color"]::-moz-color-swatch { border: 1px solid var(--hex-muted-ui); border-radius: 9999px; }
+  .dark input[type="color"]::-webkit-color-swatch { border-color: var(--hex-muted-dark); }
+  .dark input[type="color"]::-moz-color-swatch { border-color: var(--hex-muted-dark); }
   @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
   .sheet-animate { animation: sheetUp .25s ease-out; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -551,10 +560,33 @@ function isDimmedState(domain, stateStr) {
   return stateStr === 'off' || stateStr === 'unavailable' || stateStr === 'unknown';
 }
 
+const COLOR_CAPABLE_MODES = new Set(['rgb', 'rgbw', 'rgbww', 'hs', 'xy']);
+
+function lightSupportsColor(state) {
+  const modes = state.attributes?.supported_color_modes || [];
+  return modes.some(m => COLOR_CAPABLE_MODES.has(m));
+}
+
+function rgbToHex(rgb) {
+  const [r, g, b] = rgb || [255, 255, 255];
+  return '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+}
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
 function buildLightControls(eid, state) {
   if (state.state !== 'on') return '';
   const brightness = Number(state.attributes?.brightness) || 255;
   const pct = Math.round((brightness / 255) * 100);
+  const colorHtml = lightSupportsColor(state) ? `
+    <div class="mt-2 flex items-center gap-3">
+      <input type="color" value="${esc(rgbToHex(state.attributes?.rgb_color))}" id="color-${cssId(eid)}"
+        aria-label="Color" data-color-action="rgb" data-eid="${esc(eid)}">
+      <span class="text-xs text-muted">Color</span>
+    </div>` : '';
   return `<div data-slider-section class="mt-3 flex items-center gap-3">
     <span aria-hidden="true" class="material-symbols-outlined text-base text-muted">brightness_low</span>
     <input type="range" min="1" max="100" value="${pct}" id="bri-${cssId(eid)}"
@@ -562,7 +594,7 @@ function buildLightControls(eid, state) {
       data-range-action="brightness" data-eid="${esc(eid)}" data-display-id="bri-val-${cssId(eid)}">
     <span aria-hidden="true" class="material-symbols-outlined text-base text-muted">brightness_high</span>
     <span class="text-xs text-muted tabular-nums min-w-[36px] text-right font-mono" id="bri-val-${cssId(eid)}">${pct}%</span>
-  </div>`;
+  </div>${colorHtml}`;
 }
 
 function buildClimateControls(eid, state) {
@@ -754,6 +786,10 @@ function updateLightCard(eid, state, card) {
     const pct = Math.round((brightness / 255) * 100);
     const slider = document.getElementById(`bri-${cssId(eid)}`);
     if (slider) { slider.value = pct; document.getElementById(`bri-val-${cssId(eid)}`).textContent = pct + '%'; }
+    const colorInput = document.getElementById(`color-${cssId(eid)}`);
+    if (colorInput && state.attributes?.rgb_color) {
+      colorInput.value = rgbToHex(state.attributes.rgb_color);
+    }
   }
 }
 
@@ -937,6 +973,7 @@ function sendToggle(eid, domain) {
   sendCmd(eid, domain, newState);
 }
 function sendBrightness(eid, pct) { sendCmd(eid, 'light', 'turn_on', { brightness: Math.round((parseInt(pct) / 100) * 255) }); }
+function sendColor(eid, hex) { sendCmd(eid, 'light', 'turn_on', { rgb_color: hexToRgb(hex) }); }
 function sendMediaCmd(eid, service) { sendCmd(eid, 'media_player', service); }
 function sendVolume(eid, pct) { sendCmd(eid, 'media_player', 'volume_set', { volume_level: parseInt(pct) / 100 }); }
 
@@ -1051,6 +1088,7 @@ document.addEventListener('input', e => {
 
 document.addEventListener('change', e => {
   const el = e.target;
+  if (el.dataset.colorAction === 'rgb') { sendColor(el.dataset.eid, el.value); return; }
   if (!el.dataset.rangeAction) return;
   const eid = el.dataset.eid;
   const action = el.dataset.rangeAction;

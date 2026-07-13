@@ -6,6 +6,16 @@ through the latest state of this fork's `main` branch.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+Starting with this release, versions follow Home Assistant Core's
+`YYYY.M.PATCH` scheme instead of semver.
+
+## [2026.7.1] — fork release
+
+### Added
+- Guests can now change the color of RGB-capable lights, not just
+  brightness — a color picker appears alongside the brightness slider for
+  any light whose `supported_color_modes` includes an RGB/HS/XY mode.
+
 ## [0.2.8] — fork release
 
 ### Fixed
