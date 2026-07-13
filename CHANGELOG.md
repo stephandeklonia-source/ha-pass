@@ -6,6 +6,27 @@ through the latest state of this fork's `main` branch.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.7] — fork release
+
+### Added
+- Guests on a delayed start now see a live-looking preview of their device
+  list (names, icons, greyed out) instead of a full-screen "not active yet"
+  blocker — the pending state is now a compact bottom banner with the
+  countdown, and the card list stays visible (dimmed, non-interactive)
+  behind it.
+
+### Fixed
+- The preview never fetches or displays real Home Assistant state — cards
+  are built from entity IDs alone with a neutral "off" placeholder per
+  domain, and incoming SSE state updates are ignored until the token is
+  actually active.
+- Fixed a pre-existing bug where the guest page called `init()` twice on
+  every load (once conditionally, once unconditionally at the bottom of the
+  script) — harmless for active tokens beyond a wasted extra fetch and SSE
+  connection, but for pending tokens it meant real device state was already
+  being fetched in the background the whole time, just hidden behind the
+  old full-screen overlay.
+
 ## [0.2.6] — fork release
 
 ### Fixed

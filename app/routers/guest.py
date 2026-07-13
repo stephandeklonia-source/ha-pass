@@ -211,6 +211,9 @@ async def guest_pwa(background_tasks: BackgroundTasks, request: Request, slug: s
         "label": row["label"],
         "pending": pending,                                        # NEW
         "starts_at": row["starts_at"] if pending else None,        # NEW
+        # Entity list only — no HA state is fetched while pending, so the
+        # guest sees a static greyed-out preview instead of live device data.
+        "preview_entity_ids": await db.get_token_entities(row["id"]) if pending else [],
         "expires_at": row["expires_at"],
         "contact_message": settings.contact_message,
         "never_expires": NEVER_EXPIRES_SECONDS,

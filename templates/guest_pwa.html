@@ -164,14 +164,17 @@
   <p class="text-muted max-w-xs">Your guest session has ended. {{ contact_message }}</p>
 </div>
 
-<!-- Pending overlay (NEW) -->
-<div id="pending-overlay" aria-live="assertive" class="{{ 'flex' if pending else 'hidden' }} fixed inset-0 z-50 bg-bg-light dark:bg-bg-dark flex-col items-center justify-center text-center p-8 gap-4">
-  <div class="w-20 h-20 rounded-full bg-soot/5 dark:bg-white/5 flex items-center justify-center">
-    <span aria-hidden="true" class="material-symbols-outlined text-4xl text-muted">hourglass_top</span>
+<!-- Pending banner (NEW) — devices preview greyed out behind it, no live data -->
+<div id="pending-banner" aria-live="assertive" class="{{ '' if pending else 'hidden' }} fixed bottom-0 inset-x-0 z-30 bg-surface-light dark:bg-surface-dark border-t border-border-light dark:border-border-dark shadow-card">
+  <div class="max-w-xl mx-auto px-4 py-3 flex items-center gap-3" style="padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));">
+    <div class="w-10 h-10 rounded-full bg-accent/15 flex items-center justify-center flex-shrink-0">
+      <span aria-hidden="true" class="material-symbols-outlined text-accent">hourglass_top</span>
+    </div>
+    <div class="flex-1 min-w-0">
+      <div class="text-sm font-semibold">Not active yet</div>
+      <div class="text-xs text-muted">Access opens in <span id="pending-timer" class="font-mono font-bold tabular-nums text-accent"></span></div>
+    </div>
   </div>
-  <h2 class="text-2xl font-serif">Not Active Yet</h2>
-  <p class="text-muted max-w-xs">Access opens in</p>
-  <p id="pending-timer" class="text-3xl font-mono font-bold tabular-nums text-accent"></p>
 </div>
 
 <!-- Confirm bottom sheet -->
@@ -201,11 +204,13 @@ const SLUG = {{ slug | tojson }};
 const EXPIRES_AT = {{ expires_at | tojson }};
 const NEVER_EXPIRES = {{ never_expires }};
 const STARTS_AT = {{ (starts_at | tojson) if pending else 'null' }};   // NEW
+const PREVIEW_ENTITY_IDS = {{ (preview_entity_ids | tojson) if pending else '[]' }};   // NEW
 let states = {};
 let entityOrder = [];
 let sheetCallback = null;
 let sseRetryCount = 0;
 let eventSource = null;
+let previewMode = Boolean(STARTS_AT);   // NEW — true while pending: no live HA data is fetched or applied
 
 // ── Expiry Timer ─────────────────────────────────────────────────────
 const INITIAL_REMAINING = EXPIRES_AT - (Date.now() / 1000);
@@ -278,15 +283,49 @@ async function init() {
   }
 }
 
+// ── Preview (pending) rendering ─────────────────────────────────────── NEW
+// Renders cards from entity IDs alone — never fetches real HA state — so a
+// guest can see the interface shape before their access window opens.
+const PREVIEW_STATE_BY_DOMAIN = {
+  light: 'off', switch: 'off', input_boolean: 'off', fan: 'off',
+  climate: 'off', lock: 'locked', media_player: 'idle', cover: 'closed',
+  sensor: 'unavailable', binary_sensor: 'off',
+};
+
+function humanizeEntityId(eid) {
+  const name = eid.split('.').slice(1).join('.');
+  return name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+function renderPreview() {
+  entityOrder = PREVIEW_ENTITY_IDS;
+  states = {};
+  for (const eid of entityOrder) {
+    const domain = eid.split('.')[0];
+    states[eid] = {
+      entity_id: eid,
+      state: PREVIEW_STATE_BY_DOMAIN[domain] || 'unavailable',
+      attributes: { friendly_name: humanizeEntityId(eid) },
+    };
+  }
+  renderAll();
+}
+
 // ── Pending (valid-from) Timer ──────────────────────────────────────── NEW
 if (STARTS_AT) {
   document.querySelectorAll('button, input').forEach(el => el.disabled = true);
   const pendingTimerEl = document.getElementById('pending-timer');
+  const cardsContainer = document.getElementById('cards-container');
+
+  renderPreview();
+  cardsContainer.classList.add('opacity-50', 'grayscale', 'pointer-events-none', 'select-none', 'pb-24');
 
   function activateNow() {
     clearInterval(pendingInterval);
+    previewMode = false;
     if (eventSource) { eventSource.close(); eventSource = null; }
-    document.getElementById('pending-overlay').classList.add('hidden');
+    document.getElementById('pending-banner').classList.add('hidden');
+    cardsContainer.classList.remove('opacity-50', 'grayscale', 'pointer-events-none', 'select-none', 'pb-24');
     document.querySelectorAll('button, input').forEach(el => el.disabled = false);
     init();
   }
@@ -330,16 +369,19 @@ function connectSSE() {
     dot.className = 'w-1.5 h-1.5 rounded-full bg-current ping-dot';
     text.textContent = 'Live';
     sseRetryCount = 0;
-    if (wasReconnect) refetchState();
+    if (wasReconnect && !previewMode) refetchState();
   });
 
   eventSource.addEventListener('state_change', e => {
+    // Ignore live pushes while pending — the preview shows static
+    // placeholder states only, never real device data.
+    if (previewMode) return;
     const evt = JSON.parse(e.data);
     states[evt.entity_id] = evt.state;
     updateCard(evt.entity_id, evt.state);
   });
 
-  eventSource.addEventListener('reconnected', () => { refetchState(); });
+  eventSource.addEventListener('reconnected', () => { if (!previewMode) refetchState(); });
 
   eventSource.addEventListener('token_expired', () => {
     eventSource.close();
@@ -1034,7 +1076,11 @@ if ('serviceWorker' in navigator) {
   if (!('{{ base_path }}')) navigator.serviceWorker.register('/static/sw.js').catch(() => {});
 }
 
-init();
+// NOTE: init() already ran above — via the `else` branch for an active
+// token, or via activateNow() once a pending one unlocks. Calling it again
+// here was a pre-existing bug: it silently double-fetched real HA state
+// (and opened a second SSE connection) on every load, including behind the
+// old pending overlay, which defeated the point of the state-free preview.
 showInstallBanner();
 </script>
 {% endblock %}
