@@ -324,10 +324,11 @@
 const BASE = '{{ base_path }}';
 const IS_INGRESS = {{ 'true' if is_ingress else 'false' }};
 const GUEST_URL = '{{ guest_url }}';
+const GUEST_PORT = {{ guest_port }};
 
 function guestLink(slug) {
   if (GUEST_URL) return `${GUEST_URL}/g/${slug}`;
-  if (IS_INGRESS) return `http://homeassistant.local:5880/g/${slug}`;
+  if (IS_INGRESS) return `http://homeassistant.local:${GUEST_PORT}/g/${slug}`;
   return `${location.origin}/g/${slug}`;
 }
 let allEntities = [];

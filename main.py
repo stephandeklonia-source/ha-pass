@@ -14,7 +14,7 @@ from app import database as db
 from app import ha_client
 from app.config import settings
 from app.context import base_context
-from app.ingress import get_ingress_path
+from app.ingress import get_guest_port, get_ingress_path
 from app.models import NEVER_EXPIRES_SECONDS
 from app.rate_limiter import rate_limiter
 from app.routers import admin, guest
@@ -142,6 +142,7 @@ async def admin_dashboard_page(request: Request):
         "never_expires": NEVER_EXPIRES_SECONDS,
         "is_ingress": bool(ctx["base_path"]),
         "guest_url": settings.guest_url,
+        "guest_port": await get_guest_port(),
     })
     return _templates.TemplateResponse(request, "admin_dashboard.html", ctx)
 
