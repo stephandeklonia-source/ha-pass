@@ -1,5 +1,5 @@
 name: HAPass
-version: "1-devRGB"
+version: "2026.7.1-devRGB"
 slug: ha-pass
 description: Shareable guest links for controlling Home Assistant devices
 url: "https://github.com/stephandeklonia-source/ha-pass"
