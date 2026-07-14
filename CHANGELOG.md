@@ -9,6 +9,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Starting with this release, versions follow Home Assistant Core's
 `YYYY.M.PATCH` scheme instead of semver.
 
+## [2026.7.5] — fork release
+
+Includes the color wheel work from `2026.7.1-devRGB` through
+`2026.7.4-devRGB` above, now promoted out of dev status, plus:
+
+### Added
+- Four new supported entity domains, selectable when creating a guest
+  token:
+  - **Alarm** (`alarm_control_panel`) — arm Home/Away/Night and disarm,
+    with a code entry prompt when the panel requires one
+    (`code_format`). Arming modes shown are limited to what the panel's
+    `supported_features` actually advertises. Remotely triggering the
+    siren (`alarm_trigger`) is deliberately not exposed to guests, same
+    reasoning as excluding scripts/automations.
+  - **Button** (`button`) — a single Press action.
+  - **Time** (`time`) and **Date & Time** (`datetime`) — native HA
+    entity types (e.g. an integration's alarm-clock time), editable via
+    a standard time/date-time picker.
+
 ## [2026.7.4-devRGB] — dev build
 
 ### Fixed

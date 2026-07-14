@@ -224,6 +224,22 @@
   </div>
 </div>
 
+<!-- Alarm control bottom sheet -->
+<div class="fixed inset-0 z-40 hidden items-end justify-center bg-soot/40 dark:bg-black/50 backdrop-blur-sm" id="alarm-sheet-backdrop">
+  <div class="sheet-animate bg-surface-light dark:bg-surface-dark rounded-t-2xl p-6 w-full max-w-lg text-center" role="dialog" aria-modal="true" aria-labelledby="alarm-sheet-title" style="padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));">
+    <h3 class="text-lg font-serif mb-1.5" id="alarm-sheet-title">Confirm</h3>
+    <p class="text-sm text-muted mb-4" id="alarm-sheet-body"></p>
+    <div id="alarm-sheet-code-wrap" class="hidden mb-4">
+      <input type="text" autocomplete="off" placeholder="Code" id="alarm-sheet-code"
+        class="w-full text-center text-lg tracking-widest py-3 rounded-xl border border-border-light dark:border-border-dark bg-bg-light dark:bg-bg-dark">
+    </div>
+    <div class="flex gap-3">
+      <button data-action="close-alarm-sheet" class="flex-1 py-3.5 rounded-xl bg-soot/5 dark:bg-white/5 text-sm font-display font-semibold">Cancel</button>
+      <button id="alarm-sheet-ok" class="flex-1 py-3.5 rounded-xl bg-primary text-white text-sm font-display font-semibold">Confirm</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast container -->
 <div id="toast-container" aria-live="polite" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-[200] flex flex-col items-center gap-2"></div>
 {% endblock %}
@@ -525,6 +541,10 @@ function buildCard(eid, state) {
   else if (domain === 'media_player') controls = buildMediaControls(eid, state);
   else if (domain === 'cover') controls = buildCoverControls(eid, state);
   else if (domain === 'fan') controls = buildFanControls(eid, state);
+  else if (domain === 'alarm_control_panel') controls = buildAlarmControls(eid, state);
+  else if (domain === 'button') controls = buildButtonControls(eid, state);
+  else if (domain === 'time') controls = buildTimeControls(eid, state);
+  else if (domain === 'datetime') controls = buildDatetimeControls(eid, state);
 
   const hasToggle = ['light', 'switch', 'input_boolean', 'fan'].includes(domain);
   const toggleHtml = hasToggle ? `<div class="toggle-track ${stateStr === 'on' ? 'on' : ''}"
@@ -548,6 +568,21 @@ function buildCard(eid, state) {
   </div>`;
 }
 
+function timeAgo(epochSeconds) {
+  const diff = Math.max(0, Date.now() / 1000 - epochSeconds);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+const ALARM_STATE_LABELS = {
+  armed_home: 'Armed Home', armed_away: 'Armed Away', armed_night: 'Armed Night',
+  armed_vacation: 'Armed Vacation', armed_custom_bypass: 'Armed (Bypass)',
+  disarmed: 'Disarmed', pending: 'Pending', arming: 'Arming', disarming: 'Disarming',
+  triggered: 'Triggered', unavailable: 'Unavailable',
+};
+
 function formatState(domain, stateStr, state) {
   stateStr = stateStr || 'unknown';
   if (domain === 'climate') {
@@ -562,6 +597,17 @@ function formatState(domain, stateStr, state) {
   }
   if (domain === 'lock') return stateStr === 'locked' ? 'Locked' : 'Unlocked';
   if (domain === 'cover') return esc(stateStr.charAt(0).toUpperCase() + stateStr.slice(1));
+  if (domain === 'alarm_control_panel') return esc(ALARM_STATE_LABELS[stateStr] || (stateStr.charAt(0).toUpperCase() + stateStr.slice(1)));
+  if (domain === 'button') {
+    if (!stateStr || stateStr === 'unknown' || stateStr === 'unavailable') return 'Ready';
+    return `Pressed ${timeAgo(new Date(stateStr).getTime() / 1000)}`;
+  }
+  if (domain === 'time') return stateStr && stateStr !== 'unknown' ? esc(stateStr.slice(0, 5)) : 'Not set';
+  if (domain === 'datetime') {
+    if (!stateStr || stateStr === 'unknown') return 'Not set';
+    const d = new Date(stateStr);
+    return isNaN(d) ? esc(stateStr) : esc(d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }));
+  }
   if (domain === 'fan') {
     const pct = state.attributes?.percentage;
     if (stateStr === 'on' && pct != null) return `On · ${pct}%`;
@@ -786,6 +832,82 @@ function buildFanControls(eid, state) {
   </div>`;
 }
 
+const ALARM_FEATURE = { ARM_HOME: 1, ARM_AWAY: 2, ARM_NIGHT: 4 };
+
+function buildAlarmControls(eid, state) {
+  const stateStr = state.state;
+  const features = Number(state.attributes?.supported_features) || 0;
+  const codeFormat = state.attributes?.code_format || '';
+
+  const modes = [];
+  if (features & ALARM_FEATURE.ARM_HOME) modes.push(['armed_home', 'alarm_arm_home', 'Home', 'home']);
+  if (features & ALARM_FEATURE.ARM_AWAY) modes.push(['armed_away', 'alarm_arm_away', 'Away', 'directions_walk']);
+  if (features & ALARM_FEATURE.ARM_NIGHT) modes.push(['armed_night', 'alarm_arm_night', 'Night', 'bedtime']);
+
+  const armButtonsHtml = modes.map(([modeState, service, label, icon]) => `
+    <button data-action="confirm-alarm" data-eid="${esc(eid)}" data-service="${service}"
+      data-label="Arm ${esc(label)}?" data-body="This will arm the alarm in ${esc(label)} mode."
+      data-code-format="${esc(codeFormat)}"
+      class="flex-1 flex flex-col items-center justify-center gap-1 py-3 rounded-xl border-2 font-display font-semibold text-xs transition-colors active:scale-[0.98] ${
+        stateStr === modeState
+          ? 'border-rose-600/40 text-rose-600 bg-rose-600/10'
+          : 'border-border-light dark:border-border-dark text-muted'}">
+      <span aria-hidden="true" class="material-symbols-outlined text-lg">${icon}</span>
+      ${esc(label)}
+    </button>`).join('');
+
+  const disarmHtml = stateStr !== 'disarmed' ? `
+    <button data-action="confirm-alarm" data-eid="${esc(eid)}" data-service="alarm_disarm"
+      data-label="Disarm?" data-body="This will disarm the alarm."
+      data-code-format="${esc(codeFormat)}"
+      class="w-full mt-2 py-3 rounded-xl border-2 border-ink/30 text-ink bg-ink/5 font-display font-semibold text-sm flex items-center justify-center gap-2 transition-colors active:scale-[0.98]">
+      <span aria-hidden="true" class="material-symbols-outlined text-lg">lock_open</span>
+      Disarm
+    </button>` : '';
+
+  return `<div class="mt-3">
+    ${modes.length ? `<div class="flex gap-2">${armButtonsHtml}</div>` : ''}
+    ${disarmHtml}
+  </div>`;
+}
+
+function buildButtonControls(eid, state) {
+  return `<div class="mt-3">
+    <button data-action="press-button" data-eid="${esc(eid)}"
+      class="w-full py-3 rounded-xl border-2 border-accent/30 text-accent bg-accent/5 font-display font-semibold text-sm flex items-center justify-center gap-2 transition-colors active:scale-[0.98]">
+      <span aria-hidden="true" class="material-symbols-outlined text-lg">radio_button_checked</span>
+      Press
+    </button>
+  </div>`;
+}
+
+function buildTimeControls(eid, state) {
+  const value = state.state && state.state !== 'unknown' ? state.state : '';
+  return `<div class="mt-3 flex items-center gap-3">
+    <span aria-hidden="true" class="material-symbols-outlined text-base text-muted">schedule</span>
+    <input type="time" step="1" value="${esc(value)}" id="time-${cssId(eid)}"
+      aria-label="Time" data-time-action="time" data-eid="${esc(eid)}"
+      class="flex-1 py-2 px-3 rounded-xl border border-border-light dark:border-border-dark bg-bg-light dark:bg-bg-dark text-sm">
+  </div>`;
+}
+
+function datetimeLocalValue(stateStr) {
+  if (!stateStr || stateStr === 'unknown') return '';
+  const d = new Date(stateStr);
+  if (isNaN(d)) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function buildDatetimeControls(eid, state) {
+  return `<div class="mt-3 flex items-center gap-3">
+    <span aria-hidden="true" class="material-symbols-outlined text-base text-muted">event</span>
+    <input type="datetime-local" value="${esc(datetimeLocalValue(state.state))}" id="datetime-${cssId(eid)}"
+      aria-label="Date and time" data-time-action="datetime" data-eid="${esc(eid)}"
+      class="flex-1 py-2 px-3 rounded-xl border border-border-light dark:border-border-dark bg-bg-light dark:bg-bg-dark text-sm">
+  </div>`;
+}
+
 // ── Card Updates (live SSE) ──────────────────────────────────────────
 function updateCard(eid, state) {
   const card = document.getElementById(`card-${cssId(eid)}`);
@@ -800,7 +922,7 @@ function updateCard(eid, state) {
   card.classList.toggle('opacity-60', isOff);
 
   // Domain-specific updates may replaceChild, so pulse is handled there
-  const needsPulse = domain !== 'light' && domain !== 'fan';
+  const needsPulse = domain !== 'light' && domain !== 'fan' && domain !== 'alarm_control_panel';
 
   if (domain === 'light') updateLightCard(eid, state, card);
   else if (domain === 'switch' || domain === 'input_boolean') updateToggleCard(state, card);
@@ -808,6 +930,9 @@ function updateCard(eid, state) {
   else if (domain === 'lock') updateLockCard(eid, state);
   else if (domain === 'media_player') updateMediaCard(eid, state);
   else if (domain === 'fan') updateFanCard(eid, state, card);
+  else if (domain === 'alarm_control_panel') updateAlarmCard(eid, state, card);
+  else if (domain === 'time') updateTimeCard(eid, state);
+  else if (domain === 'datetime') updateDatetimeCard(eid, state);
 
   if (needsPulse) {
     card.classList.remove('pulse');
@@ -1002,6 +1127,36 @@ function updateFanCard(eid, state, card) {
   }
 }
 
+function updateAlarmCard(eid, state, card) {
+  // Arm-mode buttons highlight the currently-armed state — simplest to
+  // rebuild rather than track per-button classes; alarm state changes
+  // are infrequent, unlike e.g. brightness dragging.
+  const parent = card.parentElement;
+  const newCard = document.createElement('div');
+  newCard.innerHTML = buildCard(eid, state);
+  parent.replaceChild(newCard.firstElementChild, card);
+  const freshCard = document.getElementById(`card-${cssId(eid)}`);
+  if (freshCard) {
+    freshCard.classList.remove('pulse');
+    void freshCard.offsetWidth;
+    freshCard.classList.add('pulse');
+  }
+}
+
+function updateTimeCard(eid, state) {
+  const input = document.getElementById(`time-${cssId(eid)}`);
+  if (input && document.activeElement !== input && state.state && state.state !== 'unknown') {
+    input.value = state.state;
+  }
+}
+
+function updateDatetimeCard(eid, state) {
+  const input = document.getElementById(`datetime-${cssId(eid)}`);
+  if (input && document.activeElement !== input) {
+    input.value = datetimeLocalValue(state.state);
+  }
+}
+
 // ── Commands ─────────────────────────────────────────────────────────
 function showToast(msg, type = 'error') {
   const container = document.getElementById('toast-container');
@@ -1040,6 +1195,16 @@ function sendToggle(eid, domain) {
 function sendBrightness(eid, pct) { sendCmd(eid, 'light', 'turn_on', { brightness: Math.round((parseInt(pct) / 100) * 255) }); }
 function sendMediaCmd(eid, service) { sendCmd(eid, 'media_player', service); }
 function sendVolume(eid, pct) { sendCmd(eid, 'media_player', 'volume_set', { volume_level: parseInt(pct) / 100 }); }
+function sendButtonPress(eid) { sendCmd(eid, 'button', 'press'); }
+function sendTimeValue(eid, value) {
+  if (!value) return;
+  sendCmd(eid, 'time', 'set_value', { time: value.length === 5 ? `${value}:00` : value });
+}
+function sendDatetimeValue(eid, value) {
+  if (!value) return;
+  const formatted = value.replace('T', ' ') + (value.length === 16 ? ':00' : '');
+  sendCmd(eid, 'datetime', 'set_value', { datetime: formatted });
+}
 
 function setHvacMode(eid, mode) {
   sendCmd(eid, 'climate', 'set_hvac_mode', { hvac_mode: mode });
@@ -1088,6 +1253,48 @@ function closeSheet() {
   backdrop.classList.remove('flex');
   backdrop.classList.add('hidden');
   sheetCallback = null;
+  releaseFocus();
+}
+
+// ── Alarm Control Sheet ─────────────────────────────────────────────
+let alarmSheetCallback = null;
+
+function confirmAlarmAction(eid, service, label, body, codeFormat) {
+  document.getElementById('alarm-sheet-title').textContent = label;
+  document.getElementById('alarm-sheet-body').textContent = body;
+  const codeWrap = document.getElementById('alarm-sheet-code-wrap');
+  const codeInput = document.getElementById('alarm-sheet-code');
+  codeInput.value = '';
+  if (codeFormat) {
+    codeWrap.classList.remove('hidden');
+    codeInput.setAttribute('inputmode', codeFormat === 'number' ? 'numeric' : 'text');
+  } else {
+    codeWrap.classList.add('hidden');
+  }
+  alarmSheetCallback = () => {
+    const data = codeInput.value ? { code: codeInput.value } : {};
+    sendCmd(eid, 'alarm_control_panel', service, data);
+    closeAlarmSheet();
+  };
+  openAlarmSheet();
+}
+
+function openAlarmSheet() {
+  const backdrop = document.getElementById('alarm-sheet-backdrop');
+  backdrop.classList.remove('hidden');
+  backdrop.classList.add('flex');
+  document.getElementById('alarm-sheet-ok').onclick = alarmSheetCallback;
+  const dialog = backdrop.querySelector('[role="dialog"]');
+  if (dialog) trapFocus(dialog);
+}
+
+function closeAlarmSheet() {
+  const backdrop = document.getElementById('alarm-sheet-backdrop');
+  const dialog = backdrop.querySelector('[role="dialog"]');
+  if (dialog) dialog.removeEventListener('keydown', _handleTrapKeydown);
+  backdrop.classList.remove('flex');
+  backdrop.classList.add('hidden');
+  alarmSheetCallback = null;
   releaseFocus();
 }
 
@@ -1166,6 +1373,15 @@ document.addEventListener('click', e => {
     case 'close-color-sheet':
       closeColorSheet();
       break;
+    case 'confirm-alarm':
+      confirmAlarmAction(eid, el.dataset.service, el.dataset.label, el.dataset.body, el.dataset.codeFormat || null);
+      break;
+    case 'close-alarm-sheet':
+      closeAlarmSheet();
+      break;
+    case 'press-button':
+      sendButtonPress(eid);
+      break;
     case 'set-theme':
       setTheme(el.dataset.theme);
       break;
@@ -1193,6 +1409,8 @@ document.addEventListener('input', e => {
 
 document.addEventListener('change', e => {
   const el = e.target;
+  if (el.dataset.timeAction === 'time') { sendTimeValue(el.dataset.eid, el.value); return; }
+  if (el.dataset.timeAction === 'datetime') { sendDatetimeValue(el.dataset.eid, el.value); return; }
   if (!el.dataset.rangeAction) return;
   const eid = el.dataset.eid;
   const action = el.dataset.rangeAction;

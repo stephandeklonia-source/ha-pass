@@ -202,6 +202,114 @@ async def test_lock_open_service_allowed(client, mock_ha_client, test_db):
     assert args[2]["entity_id"] == "lock.front_door"
 
 
+async def test_alarm_disarm_forwards_code(client, mock_ha_client, test_db):
+    """Alarm disarm is allowed and an optional code passes through untouched."""
+    assert "alarm_disarm" in ALLOWED_SERVICES["alarm_control_panel"]
+    now = int(time.time())
+    await db.create_token(
+        label="Alarm", slug="alarm-test", entity_ids=["alarm_control_panel.home"],
+        expires_at=now + 3600, ip_allowlist=None,
+    )
+    resp = await client.post(
+        "/g/alarm-test/command",
+        json={
+            "entity_id": "alarm_control_panel.home",
+            "service": "alarm_disarm",
+            "data": {"code": "1234"},
+        },
+    )
+    assert resp.status_code == 200
+    mock_ha_client["call_service"].assert_called_once()
+    args = mock_ha_client["call_service"].call_args[0]
+    assert args[0] == "alarm_control_panel"
+    assert args[1] == "alarm_disarm"
+    assert args[2]["code"] == "1234"
+    assert args[2]["entity_id"] == "alarm_control_panel.home"
+
+
+async def test_alarm_arm_modes_allowed(client, mock_ha_client, test_db):
+    now = int(time.time())
+    await db.create_token(
+        label="Alarm", slug="alarm-arm-test", entity_ids=["alarm_control_panel.home"],
+        expires_at=now + 3600, ip_allowlist=None,
+    )
+    for service in ("alarm_arm_home", "alarm_arm_away", "alarm_arm_night"):
+        assert service in ALLOWED_SERVICES["alarm_control_panel"]
+        resp = await client.post(
+            "/g/alarm-arm-test/command",
+            json={"entity_id": "alarm_control_panel.home", "service": service},
+        )
+        assert resp.status_code == 200
+
+
+async def test_alarm_trigger_not_allowed(client, mock_ha_client, test_db):
+    """Triggering the siren remotely is deliberately excluded — same
+    reasoning as excluding scripts/automations from the allowlist."""
+    assert "alarm_trigger" not in ALLOWED_SERVICES["alarm_control_panel"]
+    now = int(time.time())
+    await db.create_token(
+        label="Alarm", slug="alarm-trigger-test", entity_ids=["alarm_control_panel.home"],
+        expires_at=now + 3600, ip_allowlist=None,
+    )
+    resp = await client.post(
+        "/g/alarm-trigger-test/command",
+        json={"entity_id": "alarm_control_panel.home", "service": "alarm_trigger"},
+    )
+    assert resp.status_code == 403
+    mock_ha_client["call_service"].assert_not_called()
+
+
+async def test_button_press_allowed(client, mock_ha_client, test_db):
+    now = int(time.time())
+    await db.create_token(
+        label="Button", slug="button-test", entity_ids=["button.doorbell"],
+        expires_at=now + 3600, ip_allowlist=None,
+    )
+    resp = await client.post(
+        "/g/button-test/command",
+        json={"entity_id": "button.doorbell", "service": "press"},
+    )
+    assert resp.status_code == 200
+    mock_ha_client["call_service"].assert_called_once()
+    args = mock_ha_client["call_service"].call_args[0]
+    assert args[0] == "button"
+    assert args[1] == "press"
+
+
+async def test_time_set_value_allowed(client, mock_ha_client, test_db):
+    now = int(time.time())
+    await db.create_token(
+        label="Time", slug="time-test", entity_ids=["time.alarm_clock"],
+        expires_at=now + 3600, ip_allowlist=None,
+    )
+    resp = await client.post(
+        "/g/time-test/command",
+        json={"entity_id": "time.alarm_clock", "service": "set_value", "data": {"time": "07:30:00"}},
+    )
+    assert resp.status_code == 200
+    args = mock_ha_client["call_service"].call_args[0]
+    assert args[2]["time"] == "07:30:00"
+
+
+async def test_datetime_set_value_allowed(client, mock_ha_client, test_db):
+    now = int(time.time())
+    await db.create_token(
+        label="Datetime", slug="datetime-test", entity_ids=["datetime.trip_start"],
+        expires_at=now + 3600, ip_allowlist=None,
+    )
+    resp = await client.post(
+        "/g/datetime-test/command",
+        json={
+            "entity_id": "datetime.trip_start",
+            "service": "set_value",
+            "data": {"datetime": "2026-08-01 09:00:00"},
+        },
+    )
+    assert resp.status_code == 200
+    args = mock_ha_client["call_service"].call_args[0]
+    assert args[2]["datetime"] == "2026-08-01 09:00:00"
+
+
 async def test_service_domain_mismatch_rejected(client, sample_token, mock_ha_client):
     """Service domain must match entity domain (light entity vs switch.turn_on)."""
     resp = await client.post(

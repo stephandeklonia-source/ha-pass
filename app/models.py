@@ -17,6 +17,10 @@ ALLOWED_SERVICES: dict[str, set[str]] = {
                       "media_play_pause", "turn_on", "turn_off"},
     "cover":         {"open_cover", "close_cover", "stop_cover"},
     "fan":           {"turn_on", "turn_off", "toggle", "set_percentage"},
+    "alarm_control_panel": {"alarm_arm_home", "alarm_arm_away", "alarm_arm_night", "alarm_disarm"},
+    "button":        {"press"},
+    "time":          {"set_value"},
+    "datetime":      {"set_value"},
 }
 
 READ_ONLY_DOMAINS: set[str] = {"sensor", "binary_sensor"}

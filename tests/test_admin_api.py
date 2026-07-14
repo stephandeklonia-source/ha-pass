@@ -532,6 +532,10 @@ async def test_ha_entities_filters_to_allowed_domains(client, admin_session, moc
         {"entity_id": "switch.patio", "state": "off", "attributes": {}},
         {"entity_id": "sensor.temperature", "state": "72", "attributes": {"friendly_name": "Temperature"}},
         {"entity_id": "binary_sensor.motion", "state": "off", "attributes": {"friendly_name": "Motion"}},
+        {"entity_id": "alarm_control_panel.home", "state": "disarmed", "attributes": {}},
+        {"entity_id": "button.doorbell", "state": "unknown", "attributes": {}},
+        {"entity_id": "time.alarm_clock", "state": "07:00:00", "attributes": {}},
+        {"entity_id": "datetime.trip_start", "state": "unknown", "attributes": {}},
         {"entity_id": "script.dangerous", "state": "off", "attributes": {"friendly_name": "Danger"}},
         {"entity_id": "automation.nightly", "state": "on", "attributes": {}},
     ]
@@ -543,6 +547,10 @@ async def test_ha_entities_filters_to_allowed_domains(client, admin_session, moc
     assert "switch.patio" in entity_ids
     assert "sensor.temperature" in entity_ids
     assert "binary_sensor.motion" in entity_ids
+    assert "alarm_control_panel.home" in entity_ids
+    assert "button.doorbell" in entity_ids
+    assert "time.alarm_clock" in entity_ids
+    assert "datetime.trip_start" in entity_ids
     assert "script.dangerous" not in entity_ids
     assert "automation.nightly" not in entity_ids
 
