@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Starting with this release, versions follow Home Assistant Core's
 `YYYY.M.PATCH` scheme instead of semver.
 
+## [2026.7.3-devRGB] — dev build
+
+### Changed
+- The color wheel is no longer shown inline on the card (too large, made
+  the card feel cluttered) — a small color swatch button now sits next to
+  the brightness slider, and tapping it opens the wheel in a bottom sheet,
+  matching the pattern used elsewhere in the app (e.g. lock confirmation).
+
 ## [1-devRGB] — dev build
 
 Test build for the color wheel rate-limit/throttle tuning — not a numbered

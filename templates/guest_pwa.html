@@ -68,6 +68,11 @@
     transform: translate(-50%, -50%);
     pointer-events: none;
   }
+  .color-swatch-btn {
+    width: 32px; height: 32px; border-radius: 9999px; flex-shrink: 0; padding: 0;
+    border: 1px solid var(--hex-muted-ui); cursor: pointer;
+  }
+  .dark .color-swatch-btn { border-color: var(--hex-muted-dark); }
   @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
   .sheet-animate { animation: sheetUp .25s ease-out; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -201,6 +206,21 @@
       <button data-action="close-sheet" class="flex-1 py-3.5 rounded-xl bg-soot/5 dark:bg-white/5 text-sm font-display font-semibold">Cancel</button>
       <button id="sheet-ok" class="flex-1 py-3.5 rounded-xl bg-primary text-white text-sm font-display font-semibold">Confirm</button>
     </div>
+  </div>
+</div>
+
+<!-- Color picker bottom sheet -->
+<div class="fixed inset-0 z-40 hidden items-end justify-center bg-soot/40 dark:bg-black/50 backdrop-blur-sm" id="color-sheet-backdrop">
+  <div class="sheet-animate bg-surface-light dark:bg-surface-dark rounded-t-2xl p-6 w-full max-w-lg text-center" role="dialog" aria-modal="true" aria-labelledby="color-sheet-title" style="padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));">
+    <h3 class="text-lg font-serif mb-4" id="color-sheet-title">Color</h3>
+    <div class="flex justify-center mb-5">
+      <div class="color-wheel relative rounded-full" id="color-sheet-wheel"
+        style="width:220px;height:220px;"
+        role="slider" aria-label="Color" tabindex="0" data-wheel-action="rgb">
+        <div class="color-wheel-thumb absolute rounded-full" id="color-sheet-thumb"></div>
+      </div>
+    </div>
+    <button data-action="close-color-sheet" class="w-full py-3.5 rounded-xl bg-soot/5 dark:bg-white/5 text-sm font-display font-semibold">Done</button>
   </div>
 </div>
 
@@ -567,7 +587,7 @@ function isDimmedState(domain, stateStr) {
 }
 
 const COLOR_CAPABLE_MODES = new Set(['rgb', 'rgbw', 'rgbww', 'hs', 'xy']);
-const WHEEL_SIZE = 140; // px — must match the inline width/height set on .color-wheel
+const COLOR_SHEET_WHEEL_SIZE = 220; // px — must match the inline width/height set on #color-sheet-wheel
 
 function lightSupportsColor(state) {
   const modes = state.attributes?.supported_color_modes || [];
@@ -617,17 +637,13 @@ function buildLightControls(eid, state) {
   const pct = Math.round((brightness / 255) * 100);
   let colorHtml = '';
   if (lightSupportsColor(state)) {
-    const [h0, s0] = rgbToHsv(state.attributes?.rgb_color);
-    const [dx0, dy0] = wheelOffset(h0, s0, WHEEL_SIZE / 2);
+    const [r, g, b] = state.attributes?.rgb_color || [255, 255, 255];
     colorHtml = `
-    <div class="mt-3 flex justify-center">
-      <div class="color-wheel relative rounded-full" id="wheel-${cssId(eid)}"
-        style="width:${WHEEL_SIZE}px;height:${WHEEL_SIZE}px;"
-        role="slider" aria-label="Color" tabindex="0"
-        data-wheel-action="rgb" data-eid="${esc(eid)}">
-        <div class="color-wheel-thumb absolute rounded-full" id="thumb-${cssId(eid)}"
-          style="left:calc(50% + ${dx0}px);top:calc(50% + ${dy0}px);"></div>
-      </div>
+    <div class="mt-2 flex items-center gap-3">
+      <button type="button" class="color-swatch-btn" id="swatch-${cssId(eid)}"
+        style="background: rgb(${r}, ${g}, ${b});"
+        aria-label="Choose color" data-action="open-color-sheet" data-eid="${esc(eid)}"></button>
+      <span class="text-xs text-muted">Color</span>
     </div>`;
   }
   return `<div data-slider-section class="mt-3 flex items-center gap-3">
@@ -829,15 +845,14 @@ function updateLightCard(eid, state, card) {
     const pct = Math.round((brightness / 255) * 100);
     const slider = document.getElementById(`bri-${cssId(eid)}`);
     if (slider) { slider.value = pct; document.getElementById(`bri-val-${cssId(eid)}`).textContent = pct + '%'; }
-    // Don't fight an in-progress drag on this light's own wheel with a
-    // server echo of the command we just sent.
-    if (state.attributes?.rgb_color && (!activeWheel || activeWheel.eid !== eid)) {
-      const thumb = document.getElementById(`thumb-${cssId(eid)}`);
-      if (thumb) {
-        const [h, s] = rgbToHsv(state.attributes.rgb_color);
-        const [dx, dy] = wheelOffset(h, s, WHEEL_SIZE / 2);
-        thumb.style.left = `calc(50% + ${dx}px)`;
-        thumb.style.top = `calc(50% + ${dy}px)`;
+    if (state.attributes?.rgb_color) {
+      const [r, g, b] = state.attributes.rgb_color;
+      const swatch = document.getElementById(`swatch-${cssId(eid)}`);
+      if (swatch) swatch.style.background = `rgb(${r}, ${g}, ${b})`;
+      // Don't fight an in-progress drag on the open sheet with a server
+      // echo of the command we just sent.
+      if (colorSheetEid === eid && (!activeWheel || activeWheel.eid !== eid)) {
+        positionColorSheetThumb(state.attributes.rgb_color);
       }
     }
   }
@@ -1076,6 +1091,41 @@ function closeSheet() {
   releaseFocus();
 }
 
+// ── Color Picker Sheet ────────────────────────────────────────────────
+let colorSheetEid = null;
+
+function positionColorSheetThumb(rgb) {
+  const [h, s] = rgbToHsv(rgb);
+  const [dx, dy] = wheelOffset(h, s, COLOR_SHEET_WHEEL_SIZE / 2);
+  const thumb = document.getElementById('color-sheet-thumb');
+  thumb.style.left = `calc(50% + ${dx}px)`;
+  thumb.style.top = `calc(50% + ${dy}px)`;
+}
+
+function openColorSheet(eid) {
+  colorSheetEid = eid;
+  const wheel = document.getElementById('color-sheet-wheel');
+  wheel.dataset.eid = eid;
+  document.getElementById('color-sheet-title').textContent = states[eid]?.attributes?.friendly_name || 'Color';
+  positionColorSheetThumb(states[eid]?.attributes?.rgb_color);
+
+  const backdrop = document.getElementById('color-sheet-backdrop');
+  backdrop.classList.remove('hidden');
+  backdrop.classList.add('flex');
+  const dialog = backdrop.querySelector('[role="dialog"]');
+  if (dialog) trapFocus(dialog);
+}
+
+function closeColorSheet() {
+  const backdrop = document.getElementById('color-sheet-backdrop');
+  const dialog = backdrop.querySelector('[role="dialog"]');
+  if (dialog) dialog.removeEventListener('keydown', _handleTrapKeydown);
+  backdrop.classList.remove('flex');
+  backdrop.classList.add('hidden');
+  colorSheetEid = null;
+  releaseFocus();
+}
+
 // ── Delegated Event Handlers ─────────────────────────────────────
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-action]');
@@ -1109,6 +1159,12 @@ document.addEventListener('click', e => {
       break;
     case 'close-sheet':
       closeSheet();
+      break;
+    case 'open-color-sheet':
+      openColorSheet(eid);
+      break;
+    case 'close-color-sheet':
+      closeColorSheet();
       break;
     case 'set-theme':
       setTheme(el.dataset.theme);
