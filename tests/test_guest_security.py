@@ -8,6 +8,7 @@ These are integration tests. The full request path is exercised:
 Only ha_client is mocked — it's an external dependency we can't run in CI.
 """
 import time
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -413,7 +414,7 @@ async def test_active_token_page_does_not_ship_preview_entity_ids(client, sample
 # ---------------------------------------------------------------------------
 
 async def test_rate_limit_returns_429(client, mock_ha_client, test_db):
-    """Exhaust the global 30 RPM limit and verify 429 is returned."""
+    """Exhaust the per-minute burst limit and verify 429 is returned."""
     from app.routers.guest import COMMAND_RPM
 
     now = int(time.time())
@@ -436,6 +437,36 @@ async def test_rate_limit_returns_429(client, mock_ha_client, test_db):
     )
     assert resp.status_code == 429
     assert mock_ha_client["call_service"].call_count == COMMAND_RPM
+
+
+async def test_hourly_rate_limit_blocks_sustained_use_under_per_minute_cap(
+    client, sample_token, mock_ha_client
+):
+    """Spreading requests out to dodge the per-minute burst cap still hits
+    the hourly sustained-rate cap — exercised against the real rate_limiter
+    singleton with COMMAND_RPH patched down so the test stays fast."""
+    import app.routers.guest as guest_module
+
+    now = int(time.time())
+    await db.create_token(
+        label="Hourly", slug="hourly-test", entity_ids=["light.a"],
+        expires_at=now + 3600, ip_allowlist=None,
+    )
+
+    base = time.monotonic()
+    with patch.object(guest_module, "COMMAND_RPH", 3), patch("time.monotonic", return_value=base):
+        for i in range(3):
+            resp = await client.post(
+                "/g/hourly-test/command",
+                json={"entity_id": "light.a", "service": "turn_on"},
+            )
+            assert resp.status_code == 200, f"request {i} unexpectedly blocked"
+
+        resp = await client.post(
+            "/g/hourly-test/command",
+            json={"entity_id": "light.a", "service": "turn_on"},
+        )
+        assert resp.status_code == 429
 
 
 # ---------------------------------------------------------------------------

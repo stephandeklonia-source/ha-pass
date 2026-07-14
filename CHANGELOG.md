@@ -9,6 +9,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Starting with this release, versions follow Home Assistant Core's
 `YYYY.M.PATCH` scheme instead of semver.
 
+## [2026.7.4-devRGB] — dev build
+
+### Fixed
+- The color wheel's thumb now follows the pointer immediately while
+  dragging. It was reading a stale per-entity element ID left over from
+  before the wheel moved into a popup sheet, so it silently never updated
+  locally — the dot only appeared to "catch up" once Home Assistant's
+  state-change echo came back over SSE, which felt choppy.
+
+### Changed
+- Live-drag color updates now send up to 3/sec (was 1/sec).
+- Guest command rate limit is now two-tiered: 180/min burst allowance plus
+  a 3600/hour sustained-use cap, so continuous play (e.g. a kid dragging
+  the wheel) isn't cut off by the per-minute limit alone.
+
 ## [2026.7.3-devRGB] — dev build
 
 ### Changed

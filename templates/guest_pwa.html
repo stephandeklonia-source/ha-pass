@@ -1204,7 +1204,7 @@ document.addEventListener('change', e => {
 // ── Color Wheel Drag ─────────────────────────────────────────────────
 // Throttled while dragging (the guest command proxy is rate-limited), with
 // a final unthrottled send on release so the exact released color sticks.
-const WHEEL_THROTTLE_MS = 1000;
+const WHEEL_THROTTLE_MS = 333; // ~3/sec
 let activeWheel = null; // { eid, rect, lastSent }
 
 function updateWheelFromEvent(e, commit) {
@@ -1220,7 +1220,7 @@ function updateWheelFromEvent(e, commit) {
   let h = Math.atan2(dx, -dy) * 180 / Math.PI;
   if (h < 0) h += 360;
 
-  const thumb = document.getElementById(`thumb-${cssId(eid)}`);
+  const thumb = document.getElementById('color-sheet-thumb');
   if (thumb) { thumb.style.left = `calc(50% + ${dx}px)`; thumb.style.top = `calc(50% + ${dy}px)`; }
 
   const now = performance.now();

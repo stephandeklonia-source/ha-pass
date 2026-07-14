@@ -34,9 +34,13 @@ logger = logging.getLogger(__name__)
 # L-31: Named constant for SSE keepalive interval
 SSE_KEEPALIVE_SECONDS = 25
 
-# Global rate limit for guest command proxy (requests per minute per token).
+# Global rate limits for guest command proxy, per token. A burst allowance
+# (per-minute) plus a lower sustained-rate cap (per-hour) so continuous
+# use — e.g. a kid dragging the color wheel — doesn't get cut off, while
+# still bounding total request volume over time.
 # Hardcoded — no comparable self-hosted app exposes per-user rate limits.
-COMMAND_RPM = 60
+COMMAND_RPM = 180
+COMMAND_RPH = 3600
 
 # L-8: Whitelist of allowed SSE event types
 _ALLOWED_SSE_EVENTS = {"state_change", "token_expired", "token_activated", "reconnected"}
@@ -331,7 +335,7 @@ async def guest_command(
     row = await _validate_token(slug, request)
     token_id = row["id"]
 
-    allowed = await rate_limiter.check(token_id, COMMAND_RPM)
+    allowed = await rate_limiter.check_multi(token_id, [(60, COMMAND_RPM), (3600, COMMAND_RPH)])
     if not allowed:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Rate limit exceeded")
 
