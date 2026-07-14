@@ -9,6 +9,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Starting with this release, versions follow Home Assistant Core's
 `YYYY.M.PATCH` scheme instead of semver.
 
+## [1-devRGB] — dev build
+
+Test build for the color wheel rate-limit/throttle tuning — not a numbered
+release.
+
+### Changed
+- Raised the guest command rate limit from 30 to 60 requests/minute, and
+  slowed the color wheel's live-drag throttle from ~8/sec to 1/sec, so a
+  child (or anyone) dragging the wheel continuously can't exhaust the
+  limit and lock themselves out of other commands.
+
 ## [2026.7.2] — fork release
 
 ### Changed

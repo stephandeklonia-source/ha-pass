@@ -36,7 +36,7 @@ SSE_KEEPALIVE_SECONDS = 25
 
 # Global rate limit for guest command proxy (requests per minute per token).
 # Hardcoded — no comparable self-hosted app exposes per-user rate limits.
-COMMAND_RPM = 30
+COMMAND_RPM = 60
 
 # L-8: Whitelist of allowed SSE event types
 _ALLOWED_SSE_EVENTS = {"state_change", "token_expired", "token_activated", "reconnected"}
