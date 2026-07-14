@@ -53,15 +53,21 @@
     border-radius: 50%; background: #fff; border: 1px solid var(--hex-muted-ui);
     box-shadow: 0 1px 4px rgba(0,0,0,.15); cursor: pointer;
   }
-  input[type="color"] {
-    -webkit-appearance: none; appearance: none; border: none; padding: 0;
-    width: 32px; height: 32px; border-radius: 9999px; cursor: pointer; background: none; flex-shrink: 0;
+  .color-wheel {
+    background:
+      radial-gradient(circle at center, #fff 0%, rgba(255,255,255,0) 70%),
+      conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
+    box-shadow: 0 1px 4px rgba(0,0,0,.15);
+    cursor: pointer;
+    touch-action: none;
   }
-  input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; border-radius: 9999px; }
-  input[type="color"]::-webkit-color-swatch { border: 1px solid var(--hex-muted-ui); border-radius: 9999px; }
-  input[type="color"]::-moz-color-swatch { border: 1px solid var(--hex-muted-ui); border-radius: 9999px; }
-  .dark input[type="color"]::-webkit-color-swatch { border-color: var(--hex-muted-dark); }
-  .dark input[type="color"]::-moz-color-swatch { border-color: var(--hex-muted-dark); }
+  .color-wheel-thumb {
+    width: 20px; height: 20px;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,.45), 0 0 0 1px rgba(0,0,0,.15);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
   @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
   .sheet-animate { animation: sheetUp .25s ease-out; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -561,32 +567,69 @@ function isDimmedState(domain, stateStr) {
 }
 
 const COLOR_CAPABLE_MODES = new Set(['rgb', 'rgbw', 'rgbww', 'hs', 'xy']);
+const WHEEL_SIZE = 140; // px — must match the inline width/height set on .color-wheel
 
 function lightSupportsColor(state) {
   const modes = state.attributes?.supported_color_modes || [];
   return modes.some(m => COLOR_CAPABLE_MODES.has(m));
 }
 
-function rgbToHex(rgb) {
-  const [r, g, b] = rgb || [255, 255, 255];
-  return '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+function hsvToRgb(h, s, v) {
+  const c = v * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = v - c;
+  let r = 0, g = 0, b = 0;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
 }
 
-function hexToRgb(hex) {
-  const n = parseInt(hex.slice(1), 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+function rgbToHsv(rgb) {
+  let [r, g, b] = rgb || [255, 255, 255];
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = 60 * (((g - b) / d) % 6);
+    else if (max === g) h = 60 * ((b - r) / d + 2);
+    else h = 60 * ((r - g) / d + 4);
+  }
+  if (h < 0) h += 360;
+  const s = max === 0 ? 0 : d / max;
+  return [h, s, max];
+}
+
+// Thumb offset from wheel center for a given hue/saturation — angle 0 (hue
+// red) points up, increasing clockwise, matching the CSS conic-gradient.
+function wheelOffset(h, s, radius) {
+  const rad = h * Math.PI / 180;
+  return [s * radius * Math.sin(rad), -s * radius * Math.cos(rad)];
 }
 
 function buildLightControls(eid, state) {
   if (state.state !== 'on') return '';
   const brightness = Number(state.attributes?.brightness) || 255;
   const pct = Math.round((brightness / 255) * 100);
-  const colorHtml = lightSupportsColor(state) ? `
-    <div class="mt-2 flex items-center gap-3">
-      <input type="color" value="${esc(rgbToHex(state.attributes?.rgb_color))}" id="color-${cssId(eid)}"
-        aria-label="Color" data-color-action="rgb" data-eid="${esc(eid)}">
-      <span class="text-xs text-muted">Color</span>
-    </div>` : '';
+  let colorHtml = '';
+  if (lightSupportsColor(state)) {
+    const [h0, s0] = rgbToHsv(state.attributes?.rgb_color);
+    const [dx0, dy0] = wheelOffset(h0, s0, WHEEL_SIZE / 2);
+    colorHtml = `
+    <div class="mt-3 flex justify-center">
+      <div class="color-wheel relative rounded-full" id="wheel-${cssId(eid)}"
+        style="width:${WHEEL_SIZE}px;height:${WHEEL_SIZE}px;"
+        role="slider" aria-label="Color" tabindex="0"
+        data-wheel-action="rgb" data-eid="${esc(eid)}">
+        <div class="color-wheel-thumb absolute rounded-full" id="thumb-${cssId(eid)}"
+          style="left:calc(50% + ${dx0}px);top:calc(50% + ${dy0}px);"></div>
+      </div>
+    </div>`;
+  }
   return `<div data-slider-section class="mt-3 flex items-center gap-3">
     <span aria-hidden="true" class="material-symbols-outlined text-base text-muted">brightness_low</span>
     <input type="range" min="1" max="100" value="${pct}" id="bri-${cssId(eid)}"
@@ -786,9 +829,16 @@ function updateLightCard(eid, state, card) {
     const pct = Math.round((brightness / 255) * 100);
     const slider = document.getElementById(`bri-${cssId(eid)}`);
     if (slider) { slider.value = pct; document.getElementById(`bri-val-${cssId(eid)}`).textContent = pct + '%'; }
-    const colorInput = document.getElementById(`color-${cssId(eid)}`);
-    if (colorInput && state.attributes?.rgb_color) {
-      colorInput.value = rgbToHex(state.attributes.rgb_color);
+    // Don't fight an in-progress drag on this light's own wheel with a
+    // server echo of the command we just sent.
+    if (state.attributes?.rgb_color && (!activeWheel || activeWheel.eid !== eid)) {
+      const thumb = document.getElementById(`thumb-${cssId(eid)}`);
+      if (thumb) {
+        const [h, s] = rgbToHsv(state.attributes.rgb_color);
+        const [dx, dy] = wheelOffset(h, s, WHEEL_SIZE / 2);
+        thumb.style.left = `calc(50% + ${dx}px)`;
+        thumb.style.top = `calc(50% + ${dy}px)`;
+      }
     }
   }
 }
@@ -973,7 +1023,6 @@ function sendToggle(eid, domain) {
   sendCmd(eid, domain, newState);
 }
 function sendBrightness(eid, pct) { sendCmd(eid, 'light', 'turn_on', { brightness: Math.round((parseInt(pct) / 100) * 255) }); }
-function sendColor(eid, hex) { sendCmd(eid, 'light', 'turn_on', { rgb_color: hexToRgb(hex) }); }
 function sendMediaCmd(eid, service) { sendCmd(eid, 'media_player', service); }
 function sendVolume(eid, pct) { sendCmd(eid, 'media_player', 'volume_set', { volume_level: parseInt(pct) / 100 }); }
 
@@ -1088,7 +1137,6 @@ document.addEventListener('input', e => {
 
 document.addEventListener('change', e => {
   const el = e.target;
-  if (el.dataset.colorAction === 'rgb') { sendColor(el.dataset.eid, el.value); return; }
   if (!el.dataset.rangeAction) return;
   const eid = el.dataset.eid;
   const action = el.dataset.rangeAction;
@@ -1096,6 +1144,53 @@ document.addEventListener('change', e => {
   else if (action === 'volume') sendVolume(eid, el.value);
   else if (action === 'fan-speed') sendCmd(eid, 'fan', 'set_percentage', { percentage: parseInt(el.value) });
 });
+
+// ── Color Wheel Drag ─────────────────────────────────────────────────
+// Throttled while dragging (the guest command proxy is rate-limited), with
+// a final unthrottled send on release so the exact released color sticks.
+const WHEEL_THROTTLE_MS = 120;
+let activeWheel = null; // { eid, rect, lastSent }
+
+function updateWheelFromEvent(e, commit) {
+  const { eid, rect } = activeWheel;
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const r = rect.width / 2;
+  let dx = e.clientX - cx;
+  let dy = e.clientY - cy;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const s = Math.min(dist / r, 1);
+  if (dist > r) { dx = dx / dist * r; dy = dy / dist * r; }
+  let h = Math.atan2(dx, -dy) * 180 / Math.PI;
+  if (h < 0) h += 360;
+
+  const thumb = document.getElementById(`thumb-${cssId(eid)}`);
+  if (thumb) { thumb.style.left = `calc(50% + ${dx}px)`; thumb.style.top = `calc(50% + ${dy}px)`; }
+
+  const now = performance.now();
+  if (commit || now - activeWheel.lastSent > WHEEL_THROTTLE_MS) {
+    activeWheel.lastSent = now;
+    sendCmd(eid, 'light', 'turn_on', { rgb_color: hsvToRgb(h, s, 1) });
+  }
+}
+
+document.addEventListener('pointerdown', e => {
+  const el = e.target.closest('[data-wheel-action="rgb"]');
+  if (!el) return;
+  e.preventDefault();
+  activeWheel = { eid: el.dataset.eid, rect: el.getBoundingClientRect(), lastSent: 0 };
+  updateWheelFromEvent(e, false);
+});
+document.addEventListener('pointermove', e => {
+  if (!activeWheel) return;
+  updateWheelFromEvent(e, false);
+});
+document.addEventListener('pointerup', e => {
+  if (!activeWheel) return;
+  updateWheelFromEvent(e, true);
+  activeWheel = null;
+});
+document.addEventListener('pointercancel', () => { activeWheel = null; });
 
 // ── Install Banner ───────────────────────────────────────────────────
 function showInstallBanner() {

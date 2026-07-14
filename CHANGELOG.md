@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Starting with this release, versions follow Home Assistant Core's
 `YYYY.M.PATCH` scheme instead of semver.
 
+## [2026.7.2] — fork release
+
+### Changed
+- Replaced the RGB color picker with a real color wheel, matching
+  Lovelace's own light control. Dragging applies the color live (throttled
+  to stay within the guest command rate limit), instead of only updating
+  once you dismiss a native color-picker dialog.
+
 ## [2026.7.1] — fork release
 
 ### Added
