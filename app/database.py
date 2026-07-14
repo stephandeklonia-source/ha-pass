@@ -8,6 +8,7 @@ connection pooling or switching to PostgreSQL.
 import asyncio
 import json
 import logging
+import secrets
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -16,7 +17,12 @@ from typing import Any
 import aiosqlite
 
 from app.config import settings
+from app.encryption import decrypt_pin, encrypt_pin
+
 logger = logging.getLogger(__name__)
+
+# Guest PIN session lifetime — 24 hours
+GUEST_PIN_SESSION_TTL = 86400
 
 _db: aiosqlite.Connection | None = None
 _lock = asyncio.Lock()
@@ -52,6 +58,73 @@ async def close_db() -> None:
         except Exception as exc:
             logger.warning("Error closing database: %s", exc)
         _db = None
+
+
+def _decrypt_pin_in_row(row: aiosqlite.Row) -> dict[str, Any]:
+    """Convert a row to a dict and decrypt pin_encrypted into a plaintext pin."""
+    row_dict = dict(row)
+    pin_encrypted = row_dict.pop("pin_encrypted", None)
+    if pin_encrypted:
+        try:
+            row_dict["pin"] = decrypt_pin(pin_encrypted)
+        except Exception:
+            logger.warning("Failed to decrypt pin for token %s", row_dict.get("id"))
+            row_dict["pin"] = None
+    else:
+        row_dict["pin"] = None
+    return row_dict
+
+
+# ---------------------------------------------------------------------------
+# Guest PIN sessions (POST-based PIN validation)
+# ---------------------------------------------------------------------------
+
+async def create_guest_pin_session(token_id: str) -> str:
+    db = await get_db()
+    session_id = uuid.uuid4().hex + uuid.uuid4().hex  # 64-char hex
+    now = int(time.time())
+    await db.execute(
+        """INSERT INTO guest_pin_sessions (id, token_id, created_at, expires_at)
+           VALUES (?, ?, ?, ?)""",
+        (session_id, token_id, now, now + GUEST_PIN_SESSION_TTL),
+    )
+    await db.commit()
+    return session_id
+
+
+async def get_guest_pin_session(session_id: str) -> aiosqlite.Row | None:
+    db = await get_db()
+    async with db.execute(
+        "SELECT * FROM guest_pin_sessions WHERE id = ? AND expires_at > ?",
+        (session_id, int(time.time())),
+    ) as cur:
+        return await cur.fetchone()
+
+
+# ---------------------------------------------------------------------------
+# Access codes (link-based PIN bypass)
+# ---------------------------------------------------------------------------
+
+async def set_token_access_code(token_id: str) -> str:
+    """Generate and store a random access code, replacing any existing one."""
+    code = secrets.token_hex(16)  # 32-char hex
+    db = await get_db()
+    await db.execute("UPDATE tokens SET access_code = ? WHERE id = ?", (code, token_id))
+    await db.commit()
+    return code
+
+
+async def get_token_by_access_code(access_code: str) -> dict[str, Any] | None:
+    db = await get_db()
+    async with db.execute("SELECT * FROM tokens WHERE access_code = ?", (access_code,)) as cur:
+        row = await cur.fetchone()
+        return _decrypt_pin_in_row(row) if row else None
+
+
+async def clear_token_access_code(token_id: str) -> None:
+    db = await get_db()
+    await db.execute("UPDATE tokens SET access_code = NULL WHERE id = ?", (token_id,))
+    await db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -96,11 +169,13 @@ async def create_token(
     expires_at: int,
     ip_allowlist: list[str] | None,
     starts_at: int | None = None,         # NEW
+    pin: str | None = None,
 ) -> dict[str, Any]:
     db = await get_db()
     token_id = str(uuid.uuid4())
     now = int(time.time())
     ip_json = json.dumps(ip_allowlist) if ip_allowlist else None
+    pin_encrypted = encrypt_pin(pin) if pin else None
 
     # Deduplicate entity IDs
     entity_ids = list(dict.fromkeys(entity_ids))
@@ -109,9 +184,9 @@ async def create_token(
         await db.execute("BEGIN IMMEDIATE")
         await db.execute(
             """INSERT INTO tokens
-               (id, slug, label, created_at, starts_at, expires_at, ip_allowlist)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (token_id, slug, label, now, starts_at, expires_at, ip_json),
+               (id, slug, label, created_at, starts_at, expires_at, ip_allowlist, pin_encrypted)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (token_id, slug, label, now, starts_at, expires_at, ip_json, pin_encrypted),
         )
         if entity_ids:
             await db.executemany(
@@ -125,19 +200,21 @@ async def create_token(
     return await get_token_by_id(token_id)  # type: ignore[return-value]
 
 
-async def get_token_by_slug(slug: str) -> aiosqlite.Row | None:
+async def get_token_by_slug(slug: str) -> dict[str, Any] | None:
     db = await get_db()
     async with db.execute("SELECT * FROM tokens WHERE slug = ?", (slug,)) as cur:
-        return await cur.fetchone()
+        row = await cur.fetchone()
+        return _decrypt_pin_in_row(row) if row else None
 
 
-async def get_token_by_id(token_id: str) -> aiosqlite.Row | None:
+async def get_token_by_id(token_id: str) -> dict[str, Any] | None:
     db = await get_db()
     async with db.execute("SELECT * FROM tokens WHERE id = ?", (token_id,)) as cur:
-        return await cur.fetchone()
+        row = await cur.fetchone()
+        return _decrypt_pin_in_row(row) if row else None
 
 
-async def list_tokens() -> list[aiosqlite.Row]:
+async def list_tokens() -> list[dict[str, Any]]:
     db = await get_db()
     async with db.execute(
         """SELECT t.*, COUNT(te.entity_id) AS entity_count
@@ -146,7 +223,8 @@ async def list_tokens() -> list[aiosqlite.Row]:
            GROUP BY t.id
            ORDER BY t.created_at DESC"""
     ) as cur:
-        return await cur.fetchall()
+        rows = await cur.fetchall()
+    return [_decrypt_pin_in_row(r) for r in rows]
 
 
 async def get_token_entities(token_id: str) -> list[str]:
@@ -189,6 +267,16 @@ async def activate_token_now(token_id: str) -> None:
     await db.execute(
         "UPDATE tokens SET starts_at = NULL WHERE id = ?",
         (token_id,),
+    )
+    await db.commit()
+
+
+async def update_token_pin(token_id: str, pin: str | None) -> None:
+    db = await get_db()
+    pin_encrypted = encrypt_pin(pin) if pin else None
+    await db.execute(
+        "UPDATE tokens SET pin_encrypted = ? WHERE id = ?",
+        (pin_encrypted, token_id),
     )
     await db.commit()
 
@@ -261,7 +349,7 @@ async def list_access_logs(limit: int = 50) -> list[aiosqlite.Row]:
 
 
 async def cleanup_old_data(retention_days: int) -> None:
-    """Delete old access_log rows and expired admin sessions.
+    """Delete old access_log rows, expired admin sessions, and expired guest PIN sessions.
 
     Guest tokens are intentionally retained until an admin deletes them so
     expired or revoked links can be renewed with the same entities and slug.
@@ -271,4 +359,5 @@ async def cleanup_old_data(retention_days: int) -> None:
     cutoff = now - (retention_days * 86400)
     await db.execute("DELETE FROM access_log WHERE timestamp < ?", (cutoff,))
     await db.execute("DELETE FROM admin_sessions WHERE expires_at < ?", (now,))
+    await db.execute("DELETE FROM guest_pin_sessions WHERE expires_at < ?", (now,))
     await db.commit()

@@ -42,6 +42,7 @@ class TokenCreateRequest(BaseModel):
     starts_at: int | None = None          # NEW — epoch seconds, None = active now
     expires_in_seconds: int = Field(..., gt=0)
     ip_allowlist: list[str] | None = None
+    pin: str | None = Field(default=None, min_length=4, max_length=20)
 
 
 class TokenUpdateEntitiesRequest(BaseModel):
@@ -50,6 +51,10 @@ class TokenUpdateEntitiesRequest(BaseModel):
 
 class TokenUpdateExpiryRequest(BaseModel):
     expires_in_seconds: int = Field(..., gt=0)
+
+
+class TokenUpdatePinRequest(BaseModel):
+    pin: str | None = Field(default=None, min_length=4, max_length=20)
 
 
 class CommandRequest(BaseModel):
@@ -70,3 +75,6 @@ class TokenResponse(BaseModel):
     ip_allowlist: list[str] | None
     entity_count: int
     entity_ids: list[str] | None = None
+    pin: str | None = None
+    has_access_code: bool = False
+    access_code: str | None = None

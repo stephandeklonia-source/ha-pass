@@ -210,6 +210,12 @@
           class="w-full px-3 py-2.5 rounded-xl border border-border-light dark:border-border-dark bg-bg-light dark:bg-bg-dark text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
       </div>
       <div>
+        <label for="f-pin" class="block text-xs font-mono uppercase tracking-wider text-muted mb-1.5">PIN <span class="text-muted/60 normal-case tracking-normal">(optional, 4-20 characters)</span></label>
+        <input id="f-pin" type="text" maxlength="20" placeholder="Leave blank for no PIN"
+          class="w-full px-3 py-2.5 rounded-xl border border-border-light dark:border-border-dark bg-bg-light dark:bg-bg-dark text-sm font-mono outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
+        <p class="text-xs text-muted mt-1">Guests must enter this PIN before controlling any device.</p>
+      </div>
+      <div>
         <label class="block text-xs font-mono uppercase tracking-wider text-muted mb-1.5">Entities</label>
         <div id="create-picker"></div>
       </div>
@@ -278,6 +284,47 @@
     <div class="flex justify-end gap-2 mt-5 pt-4 border-t border-border-light dark:border-border-dark">
       <button data-action="close-modal" data-modal="extend" class="px-4 py-2 text-sm font-display font-medium rounded-xl border border-border-light dark:border-border-dark hover:bg-soot/5 dark:hover:bg-white/5 transition-colors">Cancel</button>
       <button id="extend-submit-btn" data-action="submit-extend" class="px-4 py-2 text-sm font-display font-semibold rounded-xl bg-primary hover:bg-primary-hover text-white transition-colors">Extend</button>
+    </div>
+  </div>
+</div>
+
+<!-- PIN Modal -->
+<div class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-soot/40 dark:bg-black/50 backdrop-blur-sm" id="pin-modal">
+  <div class="modal-animate bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-2xl p-6 w-full max-w-sm shadow-xl" role="dialog" aria-modal="true" aria-labelledby="pin-modal-title">
+    <div class="flex items-center justify-between mb-3">
+      <h2 id="pin-modal-title" class="text-lg font-serif">PIN Protection</h2>
+      <button data-action="close-modal" data-modal="pin" aria-label="Close dialog" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-soot/5 dark:hover:bg-white/5 text-muted transition-colors">
+        <span aria-hidden="true" class="material-symbols-outlined text-xl">close</span>
+      </button>
+    </div>
+    <div id="pin-token-label" class="text-sm text-muted mb-4"></div>
+    <div class="mb-3">
+      <label for="pin-input-field" class="block text-xs font-mono uppercase tracking-wider text-muted mb-1.5">PIN <span class="text-muted/60 normal-case tracking-normal">(4-20 characters, blank to remove)</span></label>
+      <input id="pin-input-field" type="text" maxlength="20" placeholder="e.g. 4821"
+        class="w-full px-3 py-2.5 rounded-xl border border-border-light dark:border-border-dark bg-bg-light dark:bg-bg-dark text-sm font-mono outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
+    </div>
+    <div id="pin-error" role="alert" class="text-primary text-xs min-h-[18px] mb-2"></div>
+    <div class="flex justify-end gap-2 mb-2">
+      <button data-action="submit-pin" class="px-4 py-2 text-sm font-display font-semibold rounded-xl bg-primary hover:bg-primary-hover text-white transition-colors">Save</button>
+    </div>
+
+    <div id="pin-access-code-section" class="hidden pt-4 mt-2 border-t border-border-light dark:border-border-dark">
+      <label class="block text-xs font-mono uppercase tracking-wider text-muted mb-1.5">Bypass Link <span class="text-muted/60 normal-case tracking-normal">(skips PIN entry)</span></label>
+      <div id="pin-no-code" class="text-sm text-muted mb-2">No bypass link generated.</div>
+      <div id="pin-has-code" class="hidden mb-2">
+        <div id="pin-code-url" class="text-xs text-muted font-mono break-all"></div>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <button data-action="generate-access-code" class="flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-display font-medium border border-border-light dark:border-border-dark hover:bg-soot/5 dark:hover:bg-white/5 transition-colors">
+          <span aria-hidden="true" class="material-symbols-outlined text-sm">autorenew</span> <span id="pin-code-gen-label">Generate</span>
+        </button>
+        <button id="pin-copy-code-btn" data-action="copy-access-code" class="hidden flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-display font-medium border border-border-light dark:border-border-dark hover:bg-soot/5 dark:hover:bg-white/5 transition-colors">
+          <span aria-hidden="true" class="material-symbols-outlined text-sm">content_copy</span> Copy
+        </button>
+      </div>
+      <button id="pin-revoke-code-btn" data-action="revoke-access-code" class="hidden w-full mt-2 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-display font-medium text-primary border border-primary/20 hover:bg-primary/10 transition-colors">
+        <span aria-hidden="true" class="material-symbols-outlined text-sm">link_off</span> Revoke Bypass Link
+      </button>
     </div>
   </div>
 </div>
@@ -634,6 +681,10 @@ function renderTokens() {
             <span aria-hidden="true" class="material-symbols-outlined text-sm">block</span> Revoke
           </button>
         </div>
+        <button data-id="${esc(t.id)}" data-label="${esc(t.label)}" data-action="open-pin-modal"
+          class="w-full mt-2 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-display font-medium border transition-colors ${t.pin ? 'border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 bg-violet-500/10 hover:bg-violet-500/20' : 'border-border-light dark:border-border-dark hover:bg-soot/5 dark:hover:bg-white/5'}">
+          <span aria-hidden="true" class="material-symbols-outlined text-sm">${t.pin ? 'lock' : 'lock_open'}</span> ${t.pin ? 'PIN Protected' : 'Add PIN'}
+        </button>
       </div>
     </div></li>`;
   }).join('');
@@ -750,6 +801,7 @@ function openCreateModal(preset = {}) {
   document.getElementById('f-label').value = preset.label || '';
   document.getElementById('f-slug').value = '';
   document.getElementById('f-ip').value = (preset.ipAllowlist || []).join(', ');
+  document.getElementById('f-pin').value = '';
   document.getElementById('f-expiry').value = preset.expiryValue || '86400';
   document.getElementById('create-error').textContent = '';
   document.getElementById('f-custom-expiry').classList.add('hidden');
@@ -780,6 +832,8 @@ async function submitCreate() {
     document.getElementById('f-starts-error').classList.remove('hidden');
     return;
   }
+  const pin = document.getElementById('f-pin').value.trim() || null;
+  if (pin && pin.length < 4) { errEl.textContent = 'PIN must be at least 4 characters.'; return; }
 
   const body = {
     label, slug,
@@ -787,6 +841,7 @@ async function submitCreate() {
     starts_at: startsAt,          // NEW
     expires_in_seconds: expiresIn,
     ip_allowlist: ipList,
+    pin,
   };
 
   const r = await fetch(`${BASE}/admin/tokens`, {
@@ -906,6 +961,92 @@ async function submitExtend() {
   }
 }
 
+// ── PIN Modal ──────────────────────────────────────────────────────────
+let pinTokenId = null;
+
+function openPinModal(tokenId, label) {
+  pinTokenId = tokenId;
+  const t = tokens.find(x => x.id === tokenId);
+  document.getElementById('pin-token-label').textContent = label;
+  document.getElementById('pin-input-field').value = t?.pin || '';
+  document.getElementById('pin-error').textContent = '';
+  renderPinAccessCodeSection(t);
+  openModal('pin-modal');
+}
+function closePinModal() { closeModal('pin-modal'); pinTokenId = null; }
+
+function renderPinAccessCodeSection(t) {
+  const section = document.getElementById('pin-access-code-section');
+  const hasPin = !!t?.pin;
+  section.classList.toggle('hidden', !hasPin);
+  if (!hasPin) return;
+  const hasCode = !!t.has_access_code;
+  document.getElementById('pin-no-code').classList.toggle('hidden', hasCode);
+  document.getElementById('pin-has-code').classList.toggle('hidden', !hasCode);
+  document.getElementById('pin-code-gen-label').textContent = hasCode ? 'Regenerate' : 'Generate';
+  document.getElementById('pin-copy-code-btn').classList.toggle('hidden', !hasCode);
+  document.getElementById('pin-revoke-code-btn').classList.toggle('hidden', !hasCode);
+  if (hasCode) {
+    document.getElementById('pin-code-url').textContent = `${guestLink(t.slug)}?c=${t.access_code}`;
+  }
+}
+
+async function submitPin() {
+  if (!pinTokenId) return;
+  const raw = document.getElementById('pin-input-field').value.trim();
+  const errEl = document.getElementById('pin-error');
+  if (raw && raw.length < 4) { errEl.textContent = 'PIN must be at least 4 characters.'; return; }
+
+  const r = await fetch(`${BASE}/admin/tokens/${pinTokenId}/pin`, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ pin: raw || null }),
+  });
+
+  if (r.ok) {
+    const token = await r.json();
+    errEl.textContent = '';
+    showToast(raw ? 'PIN set' : 'PIN removed', 'success');
+    await loadTokens();
+    renderPinAccessCodeSection(token);
+  } else {
+    const err = await r.json().catch(() => ({}));
+    errEl.textContent = err.detail || 'Error updating PIN.';
+  }
+}
+
+async function generateAccessCode() {
+  if (!pinTokenId) return;
+  const r = await fetch(`${BASE}/admin/tokens/${pinTokenId}/access-code`, { method: 'POST' });
+  if (r.ok) {
+    const token = await r.json();
+    await loadTokens();
+    renderPinAccessCodeSection(token);
+    showToast('Bypass link generated', 'success');
+  } else {
+    const err = await r.json().catch(() => ({}));
+    showToast(err.detail || 'Error generating link', 'error');
+  }
+}
+
+async function revokeAccessCode() {
+  if (!pinTokenId) return;
+  const r = await fetch(`${BASE}/admin/tokens/${pinTokenId}/access-code`, { method: 'DELETE' });
+  if (r.ok) {
+    const token = await r.json();
+    await loadTokens();
+    renderPinAccessCodeSection(token);
+    showToast('Bypass link revoked', 'success');
+  } else {
+    showToast('Error revoking link', 'error');
+  }
+}
+
+function copyAccessCodeLink() {
+  const t = tokens.find(x => x.id === pinTokenId);
+  if (t?.access_code) copyUrl(`${guestLink(t.slug)}?c=${t.access_code}`);
+}
+
 // ── Confirm Modals ────────────────────────────────────────────────────
 let _confirmCallback = null;
 
@@ -959,12 +1100,13 @@ function closeModal(id) {
   releaseFocus();
 }
 
-['create-modal', 'edit-modal', 'extend-modal', 'confirm-modal', 'qr-modal'].forEach(id => {
+['create-modal', 'edit-modal', 'extend-modal', 'pin-modal', 'confirm-modal', 'qr-modal'].forEach(id => {
   document.getElementById(id).addEventListener('click', e => {
     if (e.target === e.currentTarget) {
       if (id === 'create-modal') closeCreateModal();
       else if (id === 'edit-modal') closeEditModal();
       else if (id === 'extend-modal') closeExtendModal();
+      else if (id === 'pin-modal') closePinModal();
       else if (id === 'confirm-modal') closeConfirmModal();
       else if (id === 'qr-modal') closeQrModal();
     }
@@ -1118,6 +1260,7 @@ document.addEventListener('keydown', e => {
     const closers = {
       'qr-modal': closeQrModal,
       'confirm-modal': closeConfirmModal,
+      'pin-modal': closePinModal,
       'extend-modal': closeExtendModal,
       'edit-modal': closeEditModal,
       'create-modal': closeCreateModal,
@@ -1194,7 +1337,7 @@ document.addEventListener('click', e => {
 
     // Close any modal
     case 'close-modal': {
-      const modalMap = { create: closeCreateModal, edit: closeEditModal, extend: closeExtendModal, confirm: closeConfirmModal, qr: closeQrModal };
+      const modalMap = { create: closeCreateModal, edit: closeEditModal, extend: closeExtendModal, pin: closePinModal, confirm: closeConfirmModal, qr: closeQrModal };
       const closer = modalMap[el.dataset.modal];
       if (closer) closer();
       break;
@@ -1206,6 +1349,13 @@ document.addEventListener('click', e => {
     case 'activate-token': activateToken(el.dataset.id); break;
     case 'confirm-revoke': confirmRevoke(el.dataset.id); break;
     case 'confirm-delete': confirmDelete(el.dataset.id); break;
+
+    // PIN modal
+    case 'open-pin-modal': openPinModal(el.dataset.id, el.dataset.label); break;
+    case 'submit-pin': submitPin(); break;
+    case 'generate-access-code': generateAccessCode(); break;
+    case 'revoke-access-code': revokeAccessCode(); break;
+    case 'copy-access-code': copyAccessCodeLink(); break;
 
     // Entity picker
     case 'picker-remove': pickerRemove(el.dataset.container, el.dataset.entity); break;

@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     brand_primary: str = "#D9523C"
     supervisor_token: str = ""
     guest_url: str = ""
+    encryption_key: str = ""  # 64 hex chars; auto-generated/persisted by run.sh
 
     @model_validator(mode="after")
     def _require_credentials_in_standalone(self):

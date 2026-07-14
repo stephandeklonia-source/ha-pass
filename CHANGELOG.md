@@ -9,6 +9,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Starting with this release, versions follow Home Assistant Core's
 `YYYY.M.PATCH` scheme instead of semver.
 
+## [2026.7.7] — fork release
+
+Ported from [j0sh1b/ha-pass](https://github.com/j0sh1b/ha-pass), with two
+security fixes over the original implementation (see below).
+
+### Added
+- **PIN protection for guest tokens** — an optional PIN can be set per
+  token when creating it, or added/changed/removed later from the token
+  card. Guests must enter the correct PIN before the guest page unlocks;
+  PINs are stored AES-256-GCM encrypted, never in plaintext.
+- **Bypass links (access codes)** — for a PIN-protected token, the admin
+  can generate a one-off link (`?c=...`) that skips PIN entry entirely,
+  for sharing a pre-authenticated link. The PIN itself never appears in
+  the URL. Revocable independently of the PIN.
+- The encryption key required for PIN storage is generated automatically
+  on first start and persisted in the add-on's `/data` folder — no manual
+  setup needed.
+
+### Fixed (relative to the upstream implementation)
+- **Closed a PIN bypass**: upstream only checked the PIN on the guest HTML
+  page — the `/state`, `/stream`, and `/command` endpoints that actually
+  control devices had no PIN check at all, so anyone who knew a token's
+  slug could skip the PIN completely via direct API calls. All guest
+  endpoints now enforce the same PIN gate.
+- Added rate limiting on PIN submission attempts (upstream had none) and
+  switched to a constant-time comparison to avoid timing side-channels.
+
 ## [2026.7.5] — fork release
 
 Includes the color wheel work from `2026.7.1-devRGB` through

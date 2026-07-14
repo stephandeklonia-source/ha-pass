@@ -3,6 +3,21 @@ set -euo pipefail
 
 OPTIONS="/data/options.json"
 
+# PIN protection needs an AES-256 key. Auto-generate and persist it in /data
+# on first run so it survives restarts/updates — an explicitly-set
+# ENCRYPTION_KEY env var always wins, for advanced/standalone setups that
+# manage their own secrets.
+mkdir -p /data
+if [ -z "${ENCRYPTION_KEY:-}" ]; then
+    KEY_FILE="/data/encryption_key"
+    if [ ! -f "$KEY_FILE" ]; then
+        python -c "import secrets; print(secrets.token_hex(32))" > "$KEY_FILE"
+        chmod 600 "$KEY_FILE"
+    fi
+    export ENCRYPTION_KEY
+    ENCRYPTION_KEY="$(cat "$KEY_FILE")"
+fi
+
 if [ -f "$OPTIONS" ] && [ -n "${SUPERVISOR_TOKEN:-}" ]; then
     echo "[run.sh] Add-on mode — reading options"
     eval "$(python -c "

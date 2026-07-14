@@ -18,6 +18,7 @@ from app.models import (
     TokenCreateRequest,
     TokenUpdateEntitiesRequest,
     TokenUpdateExpiryRequest,
+    TokenUpdatePinRequest,
 )
 from app.rate_limiter import RateLimiter
 
@@ -92,6 +93,7 @@ def _row_to_response(row: Any, entity_ids: list[str] | None = None) -> dict:
         count = row["entity_count"]
     else:
         count = 0
+    access_code = row["access_code"] if "access_code" in row.keys() else None
     return {
         "id": row["id"],
         "slug": row["slug"],
@@ -104,6 +106,9 @@ def _row_to_response(row: Any, entity_ids: list[str] | None = None) -> dict:
         "ip_allowlist": ip_list,
         "entity_count": count,
         "entity_ids": entity_ids,
+        "pin": row["pin"] if "pin" in row.keys() else None,
+        "has_access_code": bool(access_code),
+        "access_code": access_code,
     }
 
 
@@ -179,6 +184,7 @@ async def create_token(
         expires_at=expires_at,
         ip_allowlist=body.ip_allowlist,
         starts_at=body.starts_at,             # NEW
+        pin=body.pin,
     )
     entity_ids = await db.get_token_entities(row["id"])
     return _row_to_response(row, entity_ids)
@@ -252,6 +258,50 @@ async def activate_token(token_id: str, _: str = Depends(require_admin)) -> dict
         )
     await db.activate_token_now(token_id)
     await ha_client.broadcast_token_activated(token_id)
+    row = await db.get_token_by_id(token_id)
+    return _row_to_response(row)
+
+
+@router.patch("/tokens/{token_id}/pin")
+async def update_token_pin(
+    token_id: str,
+    body: TokenUpdatePinRequest,
+    _: str = Depends(require_admin),
+) -> dict:
+    row = await db.get_token_by_id(token_id)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    await db.update_token_pin(token_id, body.pin)
+    # Clearing the PIN makes any outstanding access code meaningless — and a
+    # leftover code would silently keep granting access with no PIN to show
+    # for it, so drop it too.
+    if not body.pin:
+        await db.clear_token_access_code(token_id)
+    row = await db.get_token_by_id(token_id)
+    return _row_to_response(row)
+
+
+@router.post("/tokens/{token_id}/access-code")
+async def create_access_code(token_id: str, _: str = Depends(require_admin)) -> dict:
+    row = await db.get_token_by_id(token_id)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    if not row["pin"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token has no PIN set — nothing for an access code to bypass",
+        )
+    await db.set_token_access_code(token_id)
+    row = await db.get_token_by_id(token_id)
+    return _row_to_response(row)
+
+
+@router.delete("/tokens/{token_id}/access-code")
+async def delete_access_code(token_id: str, _: str = Depends(require_admin)) -> dict:
+    row = await db.get_token_by_id(token_id)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    await db.clear_token_access_code(token_id)
     row = await db.get_token_by_id(token_id)
     return _row_to_response(row)
 

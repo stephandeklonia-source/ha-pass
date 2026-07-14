@@ -5,6 +5,7 @@ Environment variables MUST be set before any app imports because:
 - app.auth._hashed is computed at import time
 """
 import os
+import secrets
 import time
 
 # Set env vars before any app module is imported
@@ -12,6 +13,7 @@ os.environ.setdefault("ADMIN_USERNAME", "testadmin")
 os.environ.setdefault("ADMIN_PASSWORD", "testpassword123")
 os.environ.setdefault("HA_BASE_URL", "http://localhost:8123")
 os.environ.setdefault("HA_TOKEN", "test-token")
+os.environ.setdefault("ENCRYPTION_KEY", secrets.token_hex(32))
 
 import pytest
 import pytest_asyncio

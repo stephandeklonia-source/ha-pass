@@ -8,12 +8,13 @@ import ipaddress
 import json
 import logging
 import re
+import secrets
 import time
 from typing import AsyncIterator
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Path, Request, status
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Path, Query, Request, status
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from app import database as db
@@ -41,6 +42,10 @@ SSE_KEEPALIVE_SECONDS = 25
 # Hardcoded — no comparable self-hosted app exposes per-user rate limits.
 COMMAND_RPM = 180
 COMMAND_RPH = 3600
+
+# Guest PIN session cookie + brute-force protection on PIN attempts.
+GUEST_PIN_COOKIE = "ha_guest_pin_session"
+PIN_ATTEMPTS_PER_MINUTE = 10
 
 # L-8: Whitelist of allowed SSE event types
 _ALLOWED_SSE_EVENTS = {"state_change", "token_expired", "token_activated", "reconnected"}
@@ -97,8 +102,37 @@ def _enforce_ip_allowlist(row, request: Request) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="IP not allowed")
 
 
+async def _pin_gate_ok(row, request: Request) -> bool:
+    """True if the token has no PIN, or the request already proved it.
+
+    Checked via a valid guest-PIN session cookie (set after a correct POST
+    /pin submission) or an access-code query param — the same two paths the
+    PWA shell itself accepts. Applied to every guest endpoint, not just the
+    shell page: state/stream/command all carry real device control, so
+    gating only the HTML page would let anyone who knows the slug skip the
+    PIN entirely via direct API calls.
+    """
+    token_pin = row["pin"] if "pin" in row.keys() else None
+    if not token_pin:
+        return True
+
+    session_id = request.cookies.get(GUEST_PIN_COOKIE)
+    if session_id:
+        pin_session = await db.get_guest_pin_session(session_id)
+        if pin_session and pin_session["token_id"] == row["id"]:
+            return True
+
+    access_code = request.query_params.get("c")
+    if access_code:
+        token_by_code = await db.get_token_by_access_code(access_code)
+        if token_by_code and token_by_code["id"] == row["id"]:
+            return True
+
+    return False
+
+
 async def _validate_token(slug: str, request: Request):
-    """Load and validate a token by slug. Raises HTTP 410 on any issue."""
+    """Load and validate a token by slug. Raises HTTP 410/401 on any issue."""
     row = await db.get_token_by_slug(slug)
     if not row:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="Access unavailable")
@@ -108,6 +142,9 @@ async def _validate_token(slug: str, request: Request):
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="Access unavailable")
 
     _enforce_ip_allowlist(row, request)
+
+    if not await _pin_gate_ok(row, request):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="PIN required")
 
     return row
 
@@ -179,7 +216,12 @@ def _schedule_page_load_activity(background_tasks: BackgroundTasks, row) -> None
 # ---------------------------------------------------------------------------
 
 @router.get("/{slug}", response_class=HTMLResponse)
-async def guest_pwa(background_tasks: BackgroundTasks, request: Request, slug: str = Path(max_length=64)):
+async def guest_pwa(
+    background_tasks: BackgroundTasks,
+    request: Request,
+    slug: str = Path(max_length=64),
+    c: str | None = Query(default=None, description="Access code — bypasses PIN entry"),
+):
     row = await db.get_token_by_slug(slug)
     expired = not row or row["revoked"] or row["expires_at"] <= int(time.time())
 
@@ -200,6 +242,44 @@ async def guest_pwa(background_tasks: BackgroundTasks, request: Request, slug: s
 
     # Don't count a pre-window visit as "used" — skip touch/log/activity while pending
     if not pending:
+        # PIN gate: bypassed while pending (nothing to protect yet), enforced
+        # once the token is actually active.
+        token_pin = row["pin"] if "pin" in row.keys() else None
+        if token_pin:
+            session_id = request.cookies.get(GUEST_PIN_COOKIE)
+            pin_session_valid = False
+            if session_id:
+                pin_session = await db.get_guest_pin_session(session_id)
+                pin_session_valid = bool(pin_session and pin_session["token_id"] == row["id"])
+
+            access_code_valid = False
+            if c:
+                token_by_code = await db.get_token_by_access_code(c)
+                access_code_valid = bool(token_by_code and token_by_code["id"] == row["id"])
+
+            if access_code_valid and not pin_session_valid:
+                # Exchange the access code for a real session, then redirect to
+                # a clean URL so the code never lingers in browser history.
+                session_id = await db.create_guest_pin_session(row["id"])
+                response = RedirectResponse(
+                    url=f"{request.state.ingress_path}/g/{slug}",
+                    status_code=status.HTTP_302_FOUND,
+                )
+                response.set_cookie(
+                    GUEST_PIN_COOKIE,
+                    session_id,
+                    httponly=True,
+                    secure=request.url.scheme == "https",
+                    samesite="strict",
+                    max_age=db.GUEST_PIN_SESSION_TTL,
+                )
+                return response
+
+            if not access_code_valid and not pin_session_valid:
+                ctx = base_context(request)
+                ctx.update({"slug": slug, "contact_message": settings.contact_message})
+                return templates.TemplateResponse(request, "pin_entry.html", ctx)
+
         await db.touch_token(row["id"])
         await db.log_access(
             token_id=row["id"],
@@ -223,6 +303,67 @@ async def guest_pwa(background_tasks: BackgroundTasks, request: Request, slug: s
         "never_expires": NEVER_EXPIRES_SECONDS,
     })
     return templates.TemplateResponse(request, "guest_pwa.html", ctx)
+
+
+@router.post("/{slug}/pin")
+async def guest_pin_submit(
+    request: Request,
+    slug: str = Path(max_length=64),
+    pin: str = Form(..., max_length=20),
+):
+    """Validate a submitted PIN and create a session cookie on success.
+
+    POST (not GET/query params) so the PIN never lands in browser history,
+    server access logs, or a Referer header.
+    """
+    row = await db.get_token_by_slug(slug)
+    now = int(time.time())
+
+    if not row or row["revoked"] or row["expires_at"] <= now:
+        ctx = base_context(request)
+        ctx.update({"slug": slug, "contact_message": settings.contact_message})
+        return templates.TemplateResponse(request, "expired.html", ctx, status_code=410)
+
+    try:
+        _enforce_ip_allowlist(row, request)
+    except HTTPException as exc:
+        ctx = base_context(request)
+        ctx.update({"slug": slug, "contact_message": settings.contact_message})
+        return templates.TemplateResponse(request, "expired.html", ctx, status_code=exc.status_code)
+
+    token_pin = row["pin"] if "pin" in row.keys() else None
+    if not token_pin:
+        return RedirectResponse(url=f"{request.state.ingress_path}/g/{slug}", status_code=status.HTTP_303_SEE_OTHER)
+
+    allowed = await rate_limiter.check(f"pin:{row['id']}:{_client_ip(request)}", PIN_ATTEMPTS_PER_MINUTE)
+    if not allowed:
+        ctx = base_context(request)
+        ctx.update({
+            "slug": slug,
+            "contact_message": settings.contact_message,
+            "error": "Too many attempts — please wait a minute and try again.",
+        })
+        return templates.TemplateResponse(request, "pin_entry.html", ctx, status_code=status.HTTP_429_TOO_MANY_REQUESTS)
+
+    if not secrets.compare_digest(pin, token_pin):
+        ctx = base_context(request)
+        ctx.update({"slug": slug, "contact_message": settings.contact_message, "error": "Incorrect PIN"})
+        return templates.TemplateResponse(request, "pin_entry.html", ctx, status_code=status.HTTP_401_UNAUTHORIZED)
+
+    session_id = await db.create_guest_pin_session(row["id"])
+    response = RedirectResponse(
+        url=f"{request.state.ingress_path}/g/{slug}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+    response.set_cookie(
+        GUEST_PIN_COOKIE,
+        session_id,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="strict",
+        max_age=db.GUEST_PIN_SESSION_TTL,
+    )
+    return response
 
 
 # ---------------------------------------------------------------------------
