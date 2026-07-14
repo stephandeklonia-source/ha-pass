@@ -12,7 +12,7 @@ installs, just a link.
 ## Screenshots
 
 <p align="center">
-  <img src="docs/admin-dashboard.png" width="250" alt="Admin dashboard">
+  <img src="docs/DifferentUserTypes.png" width="400" alt="Admin dashboard">
   <img src="docs/admin-dark-extend.png" width="250" alt="Extend expiry (dark mode)">
   <img src="docs/admin-entity-picker.png" width="250" alt="Entity picker">
   <img src="docs/guest-pwa.png" width="250" alt="Guest PWA">
