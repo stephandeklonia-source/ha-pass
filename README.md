@@ -1,3 +1,5 @@
+<img align="right" width="100" height="100" src="https://raw.githubusercontent.com/stephandeklonia-source/ha-pass/main/logo.png">
+
 # HAPass
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
