@@ -21,8 +21,11 @@ from app.encryption import decrypt_pin, encrypt_pin
 
 logger = logging.getLogger(__name__)
 
-# Guest PIN session lifetime — 24 hours
-GUEST_PIN_SESSION_TTL = 86400
+# Guest PIN session lifetime. The "don't remember" duration bounds a
+# browser-session-only cookie as a defense-in-depth safety net; the
+# "remembered" duration is what a persistent cookie actually lives for.
+GUEST_PIN_SESSION_TTL = 86400              # 24 hours — remember_pin=False
+GUEST_PIN_SESSION_TTL_REMEMBERED = 31536000  # 365 days — remember_pin=True
 
 _db: aiosqlite.Connection | None = None
 _lock = asyncio.Lock()
@@ -79,14 +82,14 @@ def _decrypt_pin_in_row(row: aiosqlite.Row) -> dict[str, Any]:
 # Guest PIN sessions (POST-based PIN validation)
 # ---------------------------------------------------------------------------
 
-async def create_guest_pin_session(token_id: str) -> str:
+async def create_guest_pin_session(token_id: str, ttl_seconds: int = GUEST_PIN_SESSION_TTL) -> str:
     db = await get_db()
     session_id = uuid.uuid4().hex + uuid.uuid4().hex  # 64-char hex
     now = int(time.time())
     await db.execute(
         """INSERT INTO guest_pin_sessions (id, token_id, created_at, expires_at)
            VALUES (?, ?, ?, ?)""",
-        (session_id, token_id, now, now + GUEST_PIN_SESSION_TTL),
+        (session_id, token_id, now, now + ttl_seconds),
     )
     await db.commit()
     return session_id
@@ -170,6 +173,7 @@ async def create_token(
     ip_allowlist: list[str] | None,
     starts_at: int | None = None,         # NEW
     pin: str | None = None,
+    remember_pin: bool = True,
 ) -> dict[str, Any]:
     db = await get_db()
     token_id = str(uuid.uuid4())
@@ -184,9 +188,9 @@ async def create_token(
         await db.execute("BEGIN IMMEDIATE")
         await db.execute(
             """INSERT INTO tokens
-               (id, slug, label, created_at, starts_at, expires_at, ip_allowlist, pin_encrypted)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (token_id, slug, label, now, starts_at, expires_at, ip_json, pin_encrypted),
+               (id, slug, label, created_at, starts_at, expires_at, ip_allowlist, pin_encrypted, remember_pin)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (token_id, slug, label, now, starts_at, expires_at, ip_json, pin_encrypted, int(remember_pin)),
         )
         if entity_ids:
             await db.executemany(
@@ -271,12 +275,12 @@ async def activate_token_now(token_id: str) -> None:
     await db.commit()
 
 
-async def update_token_pin(token_id: str, pin: str | None) -> None:
+async def update_token_pin(token_id: str, pin: str | None, remember_pin: bool = True) -> None:
     db = await get_db()
     pin_encrypted = encrypt_pin(pin) if pin else None
     await db.execute(
-        "UPDATE tokens SET pin_encrypted = ? WHERE id = ?",
-        (pin_encrypted, token_id),
+        "UPDATE tokens SET pin_encrypted = ?, remember_pin = ? WHERE id = ?",
+        (pin_encrypted, int(remember_pin), token_id),
     )
     await db.commit()
 

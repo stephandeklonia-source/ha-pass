@@ -379,3 +379,89 @@ async def test_token_create_with_pin_via_admin_api(client, admin_session, mock_h
     # And the PIN gate is actually live for the new token
     resp = await client.get(f"/g/{body['slug']}/state")
     assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# remember_pin — persistent vs. browser-session-only cookie
+# ---------------------------------------------------------------------------
+
+async def test_remember_pin_defaults_true_on_create(client, admin_session, mock_ha_client):
+    resp = await client.post(
+        "/admin/tokens",
+        json={"label": "Default remember", "entity_ids": ["light.a"], "expires_in_seconds": 3600, "pin": "1357"},
+        cookies=admin_session,
+    )
+    assert resp.status_code == 201
+    assert resp.json()["remember_pin"] is True
+
+
+async def test_remember_pin_true_sets_persistent_cookie(client, mock_ha_client, test_db):
+    now = int(time.time())
+    await db.create_token(
+        label="Remember", slug="remember-test", entity_ids=["light.a"],
+        expires_at=now + 3600, ip_allowlist=None, pin="4821", remember_pin=True,
+    )
+    resp = await client.post("/g/remember-test/pin", data={"pin": "4821"})
+    assert resp.status_code == 303
+    set_cookie_headers = resp.headers.get_list("set-cookie")
+    assert any("max-age" in h.lower() for h in set_cookie_headers)
+
+
+async def test_remember_pin_false_sets_session_only_cookie(client, mock_ha_client, test_db):
+    """No Max-Age/Expires — the browser drops it when the session ends, so
+    the next visit asks for the PIN again."""
+    now = int(time.time())
+    await db.create_token(
+        label="No remember", slug="no-remember-test", entity_ids=["light.a"],
+        expires_at=now + 3600, ip_allowlist=None, pin="4821", remember_pin=False,
+    )
+    resp = await client.post("/g/no-remember-test/pin", data={"pin": "4821"})
+    assert resp.status_code == 303
+    set_cookie_headers = resp.headers.get_list("set-cookie")
+    assert set_cookie_headers, "expected a Set-Cookie header"
+    assert not any("max-age" in h.lower() for h in set_cookie_headers)
+    assert not any("expires" in h.lower() for h in set_cookie_headers)
+
+
+async def test_remember_pin_false_still_works_within_same_client_session(client, mock_ha_client, test_db):
+    """A session-only cookie is still a valid cookie for the lifetime of the
+    test client — remember_pin=False must not break normal app usage."""
+    now = int(time.time())
+    await db.create_token(
+        label="No remember", slug="no-remember-usable", entity_ids=["light.a"],
+        expires_at=now + 3600, ip_allowlist=None, pin="4821", remember_pin=False,
+    )
+    resp = await client.post("/g/no-remember-usable/pin", data={"pin": "4821"})
+    assert resp.status_code == 303
+
+    resp = await client.get("/g/no-remember-usable/state")
+    assert resp.status_code == 200
+
+
+async def test_access_code_exchange_respects_remember_pin_false(client, mock_ha_client, test_db):
+    now = int(time.time())
+    token = await db.create_token(
+        label="Coded no-remember", slug="coded-no-remember-test", entity_ids=["light.a"],
+        expires_at=now + 3600, ip_allowlist=None, pin="4821", remember_pin=False,
+    )
+    code = await db.set_token_access_code(token["id"])
+    resp = await client.get(f"/g/coded-no-remember-test?c={code}")
+    assert resp.status_code == 302
+    set_cookie_headers = resp.headers.get_list("set-cookie")
+    assert not any("max-age" in h.lower() for h in set_cookie_headers)
+
+
+async def test_admin_can_set_remember_pin_false(client, admin_session, sample_token, mock_ha_client):
+    resp = await client.patch(
+        f"/admin/tokens/{sample_token['id']}/pin",
+        json={"pin": "9999", "remember_pin": False},
+        cookies=admin_session,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["remember_pin"] is False
+
+    # And it actually takes effect on the guest side
+    resp = await client.post(f"/g/{sample_token['slug']}/pin", data={"pin": "9999"})
+    assert resp.status_code == 303
+    set_cookie_headers = resp.headers.get_list("set-cookie")
+    assert not any("max-age" in h.lower() for h in set_cookie_headers)

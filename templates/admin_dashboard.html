@@ -214,6 +214,10 @@
         <input id="f-pin" type="text" maxlength="20" placeholder="Leave blank for no PIN"
           class="w-full px-3 py-2.5 rounded-xl border border-border-light dark:border-border-dark bg-bg-light dark:bg-bg-dark text-sm font-mono outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
         <p class="text-xs text-muted mt-1">Guests must enter this PIN before controlling any device.</p>
+        <label class="flex items-center gap-2 mt-2 text-xs text-muted cursor-pointer">
+          <input id="f-pin-remember" type="checkbox" checked class="rounded border-border-light dark:border-border-dark">
+          Remember PIN on the guest's device (skip re-entry on future visits)
+        </label>
       </div>
       <div>
         <label class="block text-xs font-mono uppercase tracking-wider text-muted mb-1.5">Entities</label>
@@ -303,6 +307,11 @@
       <input id="pin-input-field" type="text" maxlength="20" placeholder="e.g. 4821"
         class="w-full px-3 py-2.5 rounded-xl border border-border-light dark:border-border-dark bg-bg-light dark:bg-bg-dark text-sm font-mono outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
     </div>
+    <label class="flex items-center gap-2 mb-2 text-xs text-muted cursor-pointer">
+      <input id="pin-remember-field" type="checkbox" checked class="rounded border-border-light dark:border-border-dark">
+      Remember PIN on the guest's device
+    </label>
+    <p class="text-xs text-muted/70 mb-3">Off means the PIN is asked again every time the link is opened — useful for a link that never expires.</p>
     <div id="pin-error" role="alert" class="text-primary text-xs min-h-[18px] mb-2"></div>
     <div class="flex justify-end gap-2 mb-2">
       <button data-action="submit-pin" class="px-4 py-2 text-sm font-display font-semibold rounded-xl bg-primary hover:bg-primary-hover text-white transition-colors">Save</button>
@@ -802,6 +811,7 @@ function openCreateModal(preset = {}) {
   document.getElementById('f-slug').value = '';
   document.getElementById('f-ip').value = (preset.ipAllowlist || []).join(', ');
   document.getElementById('f-pin').value = '';
+  document.getElementById('f-pin-remember').checked = true;
   document.getElementById('f-expiry').value = preset.expiryValue || '86400';
   document.getElementById('create-error').textContent = '';
   document.getElementById('f-custom-expiry').classList.add('hidden');
@@ -834,6 +844,7 @@ async function submitCreate() {
   }
   const pin = document.getElementById('f-pin').value.trim() || null;
   if (pin && pin.length < 4) { errEl.textContent = 'PIN must be at least 4 characters.'; return; }
+  const rememberPin = document.getElementById('f-pin-remember').checked;
 
   const body = {
     label, slug,
@@ -842,6 +853,7 @@ async function submitCreate() {
     expires_in_seconds: expiresIn,
     ip_allowlist: ipList,
     pin,
+    remember_pin: rememberPin,
   };
 
   const r = await fetch(`${BASE}/admin/tokens`, {
@@ -969,6 +981,7 @@ function openPinModal(tokenId, label) {
   const t = tokens.find(x => x.id === tokenId);
   document.getElementById('pin-token-label').textContent = label;
   document.getElementById('pin-input-field').value = t?.pin || '';
+  document.getElementById('pin-remember-field').checked = t?.remember_pin !== false;
   document.getElementById('pin-error').textContent = '';
   renderPinAccessCodeSection(t);
   openModal('pin-modal');
@@ -996,11 +1009,12 @@ async function submitPin() {
   const raw = document.getElementById('pin-input-field').value.trim();
   const errEl = document.getElementById('pin-error');
   if (raw && raw.length < 4) { errEl.textContent = 'PIN must be at least 4 characters.'; return; }
+  const rememberPin = document.getElementById('pin-remember-field').checked;
 
   const r = await fetch(`${BASE}/admin/tokens/${pinTokenId}/pin`, {
     method: 'PATCH',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ pin: raw || null }),
+    body: JSON.stringify({ pin: raw || null, remember_pin: rememberPin }),
   });
 
   if (r.ok) {

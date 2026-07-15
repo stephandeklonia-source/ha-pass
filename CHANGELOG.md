@@ -9,6 +9,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Starting with this release, versions follow Home Assistant Core's
 `YYYY.M.PATCH` scheme instead of semver.
 
+## [2026.7.8] — fork release
+
+### Added
+- **Remember PIN** — a per-token option (default: on) controlling whether a
+  guest's PIN entry is remembered across visits. On, the guest gets a
+  long-lived cookie and won't be asked again. Off, the PIN session is
+  scoped to the current browser visit only — the app still works normally
+  during that visit, but the guest is asked for the PIN again the next
+  time they open the link. Intended for tokens that never expire, where
+  the admin wants the PIN enforced every time rather than just once.
+  Toggle it when creating a token or later from its PIN settings.
+
 ## [2026.7.7] — fork release
 
 Ported from [j0sh1b/ha-pass](https://github.com/j0sh1b/ha-pass), with two

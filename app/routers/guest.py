@@ -102,6 +102,21 @@ def _enforce_ip_allowlist(row, request: Request) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="IP not allowed")
 
 
+def _pin_session_cookie_params(row) -> tuple[int, int | None]:
+    """(db_ttl_seconds, cookie_max_age) for a newly-created guest PIN session.
+
+    remember_pin=True (default) gets a long-lived persistent cookie so the
+    guest isn't re-prompted on every visit. remember_pin=False omits
+    Max-Age entirely, making it a browser-session cookie — the guest is
+    asked again on each new visit, which is the point of a token like a
+    permanent share link where the admin wants the PIN enforced every time.
+    """
+    remember = bool(row["remember_pin"]) if "remember_pin" in row.keys() else True
+    if remember:
+        return db.GUEST_PIN_SESSION_TTL_REMEMBERED, db.GUEST_PIN_SESSION_TTL_REMEMBERED
+    return db.GUEST_PIN_SESSION_TTL, None
+
+
 async def _pin_gate_ok(row, request: Request) -> bool:
     """True if the token has no PIN, or the request already proved it.
 
@@ -260,7 +275,8 @@ async def guest_pwa(
             if access_code_valid and not pin_session_valid:
                 # Exchange the access code for a real session, then redirect to
                 # a clean URL so the code never lingers in browser history.
-                session_id = await db.create_guest_pin_session(row["id"])
+                ttl_seconds, cookie_max_age = _pin_session_cookie_params(row)
+                session_id = await db.create_guest_pin_session(row["id"], ttl_seconds=ttl_seconds)
                 response = RedirectResponse(
                     url=f"{request.state.ingress_path}/g/{slug}",
                     status_code=status.HTTP_302_FOUND,
@@ -271,7 +287,7 @@ async def guest_pwa(
                     httponly=True,
                     secure=request.url.scheme == "https",
                     samesite="strict",
-                    max_age=db.GUEST_PIN_SESSION_TTL,
+                    max_age=cookie_max_age,
                 )
                 return response
 
@@ -350,7 +366,8 @@ async def guest_pin_submit(
         ctx.update({"slug": slug, "contact_message": settings.contact_message, "error": "Incorrect PIN"})
         return templates.TemplateResponse(request, "pin_entry.html", ctx, status_code=status.HTTP_401_UNAUTHORIZED)
 
-    session_id = await db.create_guest_pin_session(row["id"])
+    ttl_seconds, cookie_max_age = _pin_session_cookie_params(row)
+    session_id = await db.create_guest_pin_session(row["id"], ttl_seconds=ttl_seconds)
     response = RedirectResponse(
         url=f"{request.state.ingress_path}/g/{slug}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -361,7 +378,7 @@ async def guest_pin_submit(
         httponly=True,
         secure=request.url.scheme == "https",
         samesite="strict",
-        max_age=db.GUEST_PIN_SESSION_TTL,
+        max_age=cookie_max_age,
     )
     return response
 

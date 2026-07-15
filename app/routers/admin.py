@@ -107,6 +107,7 @@ def _row_to_response(row: Any, entity_ids: list[str] | None = None) -> dict:
         "entity_count": count,
         "entity_ids": entity_ids,
         "pin": row["pin"] if "pin" in row.keys() else None,
+        "remember_pin": bool(row["remember_pin"]) if "remember_pin" in row.keys() else True,
         "has_access_code": bool(access_code),
         "access_code": access_code,
     }
@@ -185,6 +186,7 @@ async def create_token(
         ip_allowlist=body.ip_allowlist,
         starts_at=body.starts_at,             # NEW
         pin=body.pin,
+        remember_pin=body.remember_pin,
     )
     entity_ids = await db.get_token_entities(row["id"])
     return _row_to_response(row, entity_ids)
@@ -271,7 +273,7 @@ async def update_token_pin(
     row = await db.get_token_by_id(token_id)
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    await db.update_token_pin(token_id, body.pin)
+    await db.update_token_pin(token_id, body.pin, body.remember_pin)
     # Clearing the PIN makes any outstanding access code meaningless — and a
     # leftover code would silently keep granting access with no PIN to show
     # for it, so drop it too.
