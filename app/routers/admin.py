@@ -19,6 +19,7 @@ from app.models import (
     TokenUpdateEntitiesRequest,
     TokenUpdateExpiryRequest,
     TokenUpdatePinRequest,
+    TokenUpdateProximityRequest,
 )
 from app.rate_limiter import RateLimiter
 
@@ -108,6 +109,7 @@ def _row_to_response(row: Any, entity_ids: list[str] | None = None) -> dict:
         "entity_ids": entity_ids,
         "pin": row["pin"] if "pin" in row.keys() else None,
         "remember_pin": bool(row["remember_pin"]) if "remember_pin" in row.keys() else True,
+        "require_proximity": bool(row["require_proximity"]) if "require_proximity" in row.keys() else False,
         "has_access_code": bool(access_code),
         "access_code": access_code,
     }
@@ -187,6 +189,7 @@ async def create_token(
         starts_at=body.starts_at,             # NEW
         pin=body.pin,
         remember_pin=body.remember_pin,
+        require_proximity=body.require_proximity,
     )
     entity_ids = await db.get_token_entities(row["id"])
     return _row_to_response(row, entity_ids)
@@ -279,6 +282,20 @@ async def update_token_pin(
     # for it, so drop it too.
     if not body.pin:
         await db.clear_token_access_code(token_id)
+    row = await db.get_token_by_id(token_id)
+    return _row_to_response(row)
+
+
+@router.patch("/tokens/{token_id}/proximity")
+async def update_token_proximity(
+    token_id: str,
+    body: TokenUpdateProximityRequest,
+    _: str = Depends(require_admin),
+) -> dict:
+    row = await db.get_token_by_id(token_id)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    await db.update_token_proximity(token_id, body.require_proximity)
     row = await db.get_token_by_id(token_id)
     return _row_to_response(row)
 

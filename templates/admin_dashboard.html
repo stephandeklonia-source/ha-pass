@@ -220,6 +220,13 @@
         </label>
       </div>
       <div>
+        <label class="flex items-center gap-2 text-xs text-muted cursor-pointer">
+          <input id="f-require-proximity" type="checkbox" class="rounded border-border-light dark:border-border-dark">
+          Require guest to be near the property to use locks/alarm
+        </label>
+        <p class="text-xs text-muted/70 mt-1">Checked using the guest's browser location against Home Assistant's home zone. Self-reported, so treat as friction against casual misuse, not a hard guarantee.</p>
+      </div>
+      <div>
         <label class="block text-xs font-mono uppercase tracking-wider text-muted mb-1.5">Entities</label>
         <div id="create-picker"></div>
       </div>
@@ -694,6 +701,10 @@ function renderTokens() {
           class="w-full mt-2 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-display font-medium border transition-colors ${t.pin ? 'border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 bg-violet-500/10 hover:bg-violet-500/20' : 'border-border-light dark:border-border-dark hover:bg-soot/5 dark:hover:bg-white/5'}">
           <span aria-hidden="true" class="material-symbols-outlined text-sm">${t.pin ? 'lock' : 'lock_open'}</span> ${t.pin ? 'PIN Protected' : 'Add PIN'}
         </button>
+        <button data-id="${esc(t.id)}" data-action="toggle-proximity"
+          class="w-full mt-2 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-display font-medium border transition-colors ${t.require_proximity ? 'border-teal-300 dark:border-teal-700 text-teal-600 dark:text-teal-400 bg-teal-500/10 hover:bg-teal-500/20' : 'border-border-light dark:border-border-dark hover:bg-soot/5 dark:hover:bg-white/5'}">
+          <span aria-hidden="true" class="material-symbols-outlined text-sm">${t.require_proximity ? 'location_on' : 'location_off'}</span> ${t.require_proximity ? 'Proximity Required' : 'No Proximity Check'}
+        </button>
       </div>
     </div></li>`;
   }).join('');
@@ -812,6 +823,7 @@ function openCreateModal(preset = {}) {
   document.getElementById('f-ip').value = (preset.ipAllowlist || []).join(', ');
   document.getElementById('f-pin').value = '';
   document.getElementById('f-pin-remember').checked = true;
+  document.getElementById('f-require-proximity').checked = false;
   document.getElementById('f-expiry').value = preset.expiryValue || '86400';
   document.getElementById('create-error').textContent = '';
   document.getElementById('f-custom-expiry').classList.add('hidden');
@@ -845,6 +857,7 @@ async function submitCreate() {
   const pin = document.getElementById('f-pin').value.trim() || null;
   if (pin && pin.length < 4) { errEl.textContent = 'PIN must be at least 4 characters.'; return; }
   const rememberPin = document.getElementById('f-pin-remember').checked;
+  const requireProximity = document.getElementById('f-require-proximity').checked;
 
   const body = {
     label, slug,
@@ -854,6 +867,7 @@ async function submitCreate() {
     ip_allowlist: ipList,
     pin,
     remember_pin: rememberPin,
+    require_proximity: requireProximity,
   };
 
   const r = await fetch(`${BASE}/admin/tokens`, {
@@ -1059,6 +1073,23 @@ async function revokeAccessCode() {
 function copyAccessCodeLink() {
   const t = tokens.find(x => x.id === pinTokenId);
   if (t?.access_code) copyUrl(`${guestLink(t.slug)}?c=${t.access_code}`);
+}
+
+// ── Proximity Requirement Toggle ──────────────────────────────────────
+async function toggleProximity(tokenId) {
+  const t = tokens.find(x => x.id === tokenId);
+  const next = !t?.require_proximity;
+  const r = await fetch(`${BASE}/admin/tokens/${tokenId}/proximity`, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ require_proximity: next }),
+  });
+  if (r.ok) {
+    showToast(next ? 'Proximity requirement enabled' : 'Proximity requirement disabled', 'success');
+    loadTokens();
+  } else {
+    showToast('Error updating proximity setting', 'error');
+  }
 }
 
 // ── Confirm Modals ────────────────────────────────────────────────────
@@ -1370,6 +1401,7 @@ document.addEventListener('click', e => {
     case 'generate-access-code': generateAccessCode(); break;
     case 'revoke-access-code': revokeAccessCode(); break;
     case 'copy-access-code': copyAccessCodeLink(); break;
+    case 'toggle-proximity': toggleProximity(el.dataset.id); break;
 
     // Entity picker
     case 'picker-remove': pickerRemove(el.dataset.container, el.dataset.entity); break;

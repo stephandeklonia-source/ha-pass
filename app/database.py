@@ -174,6 +174,7 @@ async def create_token(
     starts_at: int | None = None,         # NEW
     pin: str | None = None,
     remember_pin: bool = True,
+    require_proximity: bool = False,
 ) -> dict[str, Any]:
     db = await get_db()
     token_id = str(uuid.uuid4())
@@ -188,9 +189,9 @@ async def create_token(
         await db.execute("BEGIN IMMEDIATE")
         await db.execute(
             """INSERT INTO tokens
-               (id, slug, label, created_at, starts_at, expires_at, ip_allowlist, pin_encrypted, remember_pin)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (token_id, slug, label, now, starts_at, expires_at, ip_json, pin_encrypted, int(remember_pin)),
+               (id, slug, label, created_at, starts_at, expires_at, ip_allowlist, pin_encrypted, remember_pin, require_proximity)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (token_id, slug, label, now, starts_at, expires_at, ip_json, pin_encrypted, int(remember_pin), int(require_proximity)),
         )
         if entity_ids:
             await db.executemany(
@@ -281,6 +282,15 @@ async def update_token_pin(token_id: str, pin: str | None, remember_pin: bool = 
     await db.execute(
         "UPDATE tokens SET pin_encrypted = ?, remember_pin = ? WHERE id = ?",
         (pin_encrypted, int(remember_pin), token_id),
+    )
+    await db.commit()
+
+
+async def update_token_proximity(token_id: str, require_proximity: bool) -> None:
+    db = await get_db()
+    await db.execute(
+        "UPDATE tokens SET require_proximity = ? WHERE id = ?",
+        (int(require_proximity), token_id),
     )
     await db.commit()
 

@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import time
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
@@ -226,6 +227,48 @@ async def logbook_log(data: dict) -> Any:
     )
     resp.raise_for_status()
     return resp.json()
+
+
+# ---------------------------------------------------------------------------
+# Home zone — for proximity-gated commands (locks, alarm)
+# ---------------------------------------------------------------------------
+HOME_ZONE_CACHE_TTL = 300  # seconds — the zone rarely changes
+
+_home_zone_cache: dict | None = None
+_home_zone_cache_ts: float = 0.0
+
+
+async def get_home_zone() -> dict | None:
+    """Fetch HA's home zone (latitude/longitude/radius in meters).
+
+    Returns None if zone.home doesn't exist or the request fails — callers
+    must treat that as "location can't be verified" and fail closed rather
+    than skip the check.
+    """
+    global _home_zone_cache, _home_zone_cache_ts
+    now = time.monotonic()
+    if _home_zone_cache is not None and (now - _home_zone_cache_ts) < HOME_ZONE_CACHE_TTL:
+        return _home_zone_cache
+
+    try:
+        resp = await _require_client().get("/api/states/zone.home")
+        resp.raise_for_status()
+        data = resp.json()
+    except httpx.HTTPError:
+        logger.warning("Failed to fetch zone.home for proximity check")
+        return None
+
+    attrs = data.get("attributes", {})
+    latitude = attrs.get("latitude")
+    longitude = attrs.get("longitude")
+    radius = attrs.get("radius")
+    if latitude is None or longitude is None or radius is None:
+        logger.warning("zone.home is missing latitude/longitude/radius attributes")
+        return None
+
+    _home_zone_cache = {"latitude": latitude, "longitude": longitude, "radius": radius}
+    _home_zone_cache_ts = now
+    return _home_zone_cache
 
 
 async def validate_connectivity() -> None:

@@ -71,6 +71,7 @@ def mock_ha_client():
         "broadcast_token_expired": AsyncMock(),
         "broadcast_token_activated": AsyncMock(),
         "invalidate_entity_cache": AsyncMock(),
+        "get_home_zone": AsyncMock(return_value={"latitude": 52.0, "longitude": 5.0, "radius": 100}),
     }
     with patch.multiple("app.ha_client", **mocks):
         yield mocks

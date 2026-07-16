@@ -256,6 +256,8 @@ const EXPIRES_AT = {{ expires_at | tojson }};
 const NEVER_EXPIRES = {{ never_expires }};
 const STARTS_AT = {{ (starts_at | tojson) if pending else 'null' }};   // NEW
 const PREVIEW_ENTITY_IDS = {{ (preview_entity_ids | tojson) if pending else '[]' }};   // NEW
+const REQUIRE_PROXIMITY = {{ 'true' if require_proximity else 'false' }};
+const PROXIMITY_GATED_DOMAINS = ['lock', 'alarm_control_panel'];
 let states = {};
 let entityOrder = [];
 let sheetCallback = null;
@@ -1171,15 +1173,49 @@ function showToast(msg, type = 'error') {
   setTimeout(() => { el.classList.add('toast-out'); setTimeout(() => el.remove(), 200); }, 3000);
 }
 
+// ── Proximity (geolocation) for locks/alarm ───────────────────────────
+function getGeoPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject({ code: 0 }); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve(pos.coords),
+      err => reject(err),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
+  });
+}
+
+function geoErrorMessage(err) {
+  if (err && err.code === 1) return 'Location permission denied — enable it to use this';
+  if (err && err.code === 2) return 'Could not determine your location';
+  if (err && err.code === 3) return 'Location request timed out';
+  return 'Your browser does not support location — required for this action';
+}
+
 async function sendCmd(entityId, domain, service, extraData = {}) {
+  let latitude = null, longitude = null;
+  if (REQUIRE_PROXIMITY && PROXIMITY_GATED_DOMAINS.includes(domain)) {
+    showToast('Checking your location…', 'info');
+    try {
+      const coords = await getGeoPosition();
+      latitude = coords.latitude;
+      longitude = coords.longitude;
+    } catch (err) {
+      showToast(geoErrorMessage(err));
+      return;
+    }
+  }
   try {
     const r = await fetch(`/g/${SLUG}/command`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ entity_id: entityId, service: `${domain}.${service}`, data: extraData }),
+      body: JSON.stringify({ entity_id: entityId, service: `${domain}.${service}`, data: extraData, latitude, longitude }),
     });
     if (r.status === 410) { showExpired(); return; }
     if (r.status === 429) { showToast('Too many requests — slow down'); return; }
+    if (r.status === 403) { showToast('You must be near the property to use this'); return; }
+    if (r.status === 400) { showToast('Location required for this action'); return; }
+    if (r.status === 503) { showToast('Unable to verify your location right now'); return; }
     if (!r.ok) showToast('Command failed');
   } catch {
     showToast('You appear to be offline');

@@ -29,6 +29,12 @@ SUPPORTED_DOMAINS: set[str] = set(ALLOWED_SERVICES) | READ_ONLY_DOMAINS
 # Keys that could bypass the entity allowlist if forwarded to HA
 FORBIDDEN_DATA_KEYS = {"entity_id", "device_id", "area_id", "floor_id", "label_id"}
 
+# Domains sensitive enough that a token can require the guest's browser to
+# report a location inside HA's home zone before the command is allowed.
+# The guest-supplied coordinates are self-reported and easily spoofed —
+# this is friction against casual misuse, not a cryptographic guarantee.
+PROXIMITY_GATED_DOMAINS: set[str] = {"lock", "alarm_control_panel"}
+
 
 class AdminLoginRequest(BaseModel):
     username: str
@@ -44,6 +50,7 @@ class TokenCreateRequest(BaseModel):
     ip_allowlist: list[str] | None = None
     pin: str | None = Field(default=None, min_length=4, max_length=20)
     remember_pin: bool = True
+    require_proximity: bool = False
 
 
 class TokenUpdateEntitiesRequest(BaseModel):
@@ -59,10 +66,16 @@ class TokenUpdatePinRequest(BaseModel):
     remember_pin: bool = True
 
 
+class TokenUpdateProximityRequest(BaseModel):
+    require_proximity: bool
+
+
 class CommandRequest(BaseModel):
     entity_id: str
     service: str  # e.g. "light.turn_on"
     data: dict[str, Any] = Field(default_factory=dict)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
 
 
 class TokenResponse(BaseModel):
@@ -79,5 +92,6 @@ class TokenResponse(BaseModel):
     entity_ids: list[str] | None = None
     pin: str | None = None
     remember_pin: bool = True
+    require_proximity: bool = False
     has_access_code: bool = False
     access_code: str | None = None

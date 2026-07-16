@@ -7,6 +7,7 @@ import asyncio
 import ipaddress
 import json
 import logging
+import math
 import re
 import secrets
 import time
@@ -26,6 +27,7 @@ from app.models import (
     CommandRequest,
     FORBIDDEN_DATA_KEYS,
     NEVER_EXPIRES_SECONDS,
+    PROXIMITY_GATED_DOMAINS,
 )
 from app.rate_limiter import rate_limiter
 
@@ -87,6 +89,40 @@ def _client_ip(request: Request) -> str:
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
+
+
+EARTH_RADIUS_METERS = 6371000
+
+
+def _haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance between two lat/long points, in meters."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lon2 - lon1)
+    a = math.sin(d_phi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(d_lambda / 2) ** 2
+    return 2 * EARTH_RADIUS_METERS * math.asin(math.sqrt(a))
+
+
+async def _enforce_proximity(row, body: CommandRequest, entity_domain: str) -> None:
+    """Raise if a proximity-gated command isn't backed by a nearby location.
+
+    Only applies when the token has require_proximity set AND the entity's
+    domain is sensitive enough to gate (locks, alarm). The guest-reported
+    coordinates are self-supplied and easily spoofed, so this is friction
+    against casual misuse, not a hard security boundary — same caveat as
+    the IP allowlist. Fails closed: a missing coordinate or an unreachable
+    home zone blocks the command rather than silently letting it through.
+    """
+    if not row.get("require_proximity") or entity_domain not in PROXIMITY_GATED_DOMAINS:
+        return
+    if body.latitude is None or body.longitude is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Location required for this action")
+    zone = await ha_client.get_home_zone()
+    if not zone:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Unable to verify location right now")
+    distance = _haversine_meters(body.latitude, body.longitude, zone["latitude"], zone["longitude"])
+    if distance > zone["radius"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You must be near the property to use this")
 
 
 def _enforce_ip_allowlist(row, request: Request) -> None:
@@ -317,6 +353,7 @@ async def guest_pwa(
         "expires_at": row["expires_at"],
         "contact_message": settings.contact_message,
         "never_expires": NEVER_EXPIRES_SECONDS,
+        "require_proximity": bool(row.get("require_proximity")),
     })
     return templates.TemplateResponse(request, "guest_pwa.html", ctx)
 
@@ -526,6 +563,8 @@ async def guest_command(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Service '{svc_name}' not allowed for {entity_domain}",
         )
+
+    await _enforce_proximity(row, body, entity_domain)
 
     clean_data = {k: v for k, v in body.data.items() if k not in FORBIDDEN_DATA_KEYS}
     service_data = {**clean_data, "entity_id": body.entity_id}

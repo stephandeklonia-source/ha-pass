@@ -9,6 +9,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Starting with this release, versions follow Home Assistant Core's
 `YYYY.M.PATCH` scheme instead of semver.
 
+## [2026.7.9] — fork release
+
+### Added
+- **Proximity requirement for locks/alarm** — a per-token option (default:
+  off) that requires the guest's browser to report a location inside Home
+  Assistant's home zone before a lock or alarm command is allowed. Only
+  gates `lock` and `alarm_control_panel` domains — lights, climate, etc.
+  keep working from anywhere. The home location/radius is read
+  automatically from HA's `zone.home`, no extra configuration needed.
+  Requires HTTPS on the guest link (browsers only expose geolocation on
+  a secure context). Note this is a soft gate, not a hard guarantee — the
+  guest's browser self-reports its coordinates, same caveat as the
+  existing IP allowlist.
+- Toggle it when creating a token, or later from a button on the token
+  card in the admin dashboard.
+
 ## [2026.7.8] — fork release
 
 ### Added
