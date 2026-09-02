@@ -70,6 +70,18 @@ class TokenUpdateProximityRequest(BaseModel):
     require_proximity: bool
 
 
+class TemplateCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    entity_ids: list[str] = Field(..., min_length=1)
+
+
+class TemplateResponse(BaseModel):
+    id: str
+    name: str
+    entity_ids: list[str]
+    created_at: int
+
+
 class CommandRequest(BaseModel):
     entity_id: str
     service: str  # e.g. "light.turn_on"

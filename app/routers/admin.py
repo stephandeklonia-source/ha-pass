@@ -15,6 +15,7 @@ from app.models import (
     AdminLoginRequest,
     NEVER_EXPIRES_SECONDS,
     SUPPORTED_DOMAINS,
+    TemplateCreateRequest,
     TokenCreateRequest,
     TokenUpdateEntitiesRequest,
     TokenUpdateExpiryRequest,
@@ -267,6 +268,29 @@ async def activate_token(token_id: str, _: str = Depends(require_admin)) -> dict
     return _row_to_response(row)
 
 
+@router.post("/tokens/{token_id}/rotate-slug")
+async def rotate_token_slug(token_id: str, _: str = Depends(require_admin)) -> dict:
+    """Swap in a fresh, unguessable slug — the old link stops working
+    immediately — while keeping the same entities/expiry/PIN/history.
+    For handing the same access configuration to a new guest without
+    rebuilding the token from scratch."""
+    row = await db.get_token_by_id(token_id)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    for _attempt in range(5):
+        new_slug = secrets.token_hex(16)
+        if not await db.get_token_by_slug(new_slug):
+            break
+    else:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not generate a unique slug")
+
+    await db.rotate_token_slug(token_id, new_slug)
+    row = await db.get_token_by_id(token_id)
+    entity_ids = await db.get_token_entities(token_id)
+    return _row_to_response(row, entity_ids)
+
+
 @router.patch("/tokens/{token_id}/pin")
 async def update_token_pin(
     token_id: str,
@@ -368,3 +392,27 @@ async def ha_entities(_: str = Depends(require_admin)) -> list[dict]:
         for s in states
         if (domain := s["entity_id"].split(".")[0]) in SUPPORTED_DOMAINS
     ]
+
+
+# ---------------------------------------------------------------------------
+# Entity templates — reusable entity selections for the create-token picker
+# ---------------------------------------------------------------------------
+
+@router.get("/templates")
+async def list_templates(_: str = Depends(require_admin)) -> list[dict]:
+    return await db.list_templates()
+
+
+@router.post("/templates", status_code=status.HTTP_201_CREATED)
+async def create_template(body: TemplateCreateRequest, _: str = Depends(require_admin)) -> dict:
+    if await db.get_template_by_name(body.name):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Template '{body.name}' already exists")
+    return await db.create_template(body.name, body.entity_ids)
+
+
+@router.delete("/templates/{template_id}")
+async def delete_template(template_id: str, _: str = Depends(require_admin)) -> dict:
+    if not await db.get_template_by_id(template_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    await db.delete_template(template_id)
+    return {"ok": True}

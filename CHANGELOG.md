@@ -9,6 +9,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Starting with this release, versions follow Home Assistant Core's
 `YYYY.M.PATCH` scheme instead of semver.
 
+## [2026.7.10] — fork release
+
+Implements [Rohithkadaveru/ha-pass#6](https://github.com/Rohithkadaveru/ha-pass/issues/6).
+
+### Added
+- **Entity templates** — save the entity selection from the create-token
+  picker as a named template, then load it back into the picker on any
+  future token instead of re-searching for the same devices every time.
+  Manage saved templates (view/delete) from a link in the create-token
+  modal.
+- **Rotate link** — new button on each token card that swaps in a fresh,
+  unguessable slug while keeping the same entities, expiry, PIN, and
+  access history. The old link is invalidated immediately. For handing
+  the same access configuration to a new guest (e.g. the next booking in
+  the same room) without rebuilding the token from scratch. Any existing
+  bypass access-code is cleared as part of the rotation, since it was
+  minted for the old link.
+
 ## [2026.7.9] — fork release
 
 ### Added

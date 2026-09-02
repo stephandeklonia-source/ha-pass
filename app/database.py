@@ -295,6 +295,22 @@ async def update_token_proximity(token_id: str, require_proximity: bool) -> None
     await db.commit()
 
 
+async def rotate_token_slug(token_id: str, new_slug: str) -> None:
+    """Swap in a new slug, immediately invalidating the old link.
+
+    Entities, expiry, PIN, and history all stay put — this is meant for
+    handing the same access configuration to a new guest. Any existing
+    access code is cleared: it was minted for the old link and a stale
+    bypass code should not silently carry over to the new one.
+    """
+    db = await get_db()
+    await db.execute(
+        "UPDATE tokens SET slug = ?, access_code = NULL WHERE id = ?",
+        (new_slug, token_id),
+    )
+    await db.commit()
+
+
 async def revoke_token(token_id: str) -> None:
     db = await get_db()
     await db.execute("UPDATE tokens SET revoked = 1 WHERE id = ?", (token_id,))
@@ -374,4 +390,54 @@ async def cleanup_old_data(retention_days: int) -> None:
     await db.execute("DELETE FROM access_log WHERE timestamp < ?", (cutoff,))
     await db.execute("DELETE FROM admin_sessions WHERE expires_at < ?", (now,))
     await db.execute("DELETE FROM guest_pin_sessions WHERE expires_at < ?", (now,))
+    await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Entity templates — reusable named entity selections for token creation
+# ---------------------------------------------------------------------------
+
+def _row_to_template(row: aiosqlite.Row) -> dict[str, Any]:
+    d = dict(row)
+    d["entity_ids"] = json.loads(d["entity_ids"])
+    return d
+
+
+async def create_template(name: str, entity_ids: list[str]) -> dict[str, Any]:
+    db = await get_db()
+    template_id = str(uuid.uuid4())
+    now = int(time.time())
+    entity_ids = list(dict.fromkeys(entity_ids))
+    await db.execute(
+        "INSERT INTO templates (id, name, entity_ids, created_at) VALUES (?, ?, ?, ?)",
+        (template_id, name, json.dumps(entity_ids), now),
+    )
+    await db.commit()
+    return await get_template_by_id(template_id)  # type: ignore[return-value]
+
+
+async def list_templates() -> list[dict[str, Any]]:
+    db = await get_db()
+    async with db.execute("SELECT * FROM templates ORDER BY name COLLATE NOCASE") as cur:
+        rows = await cur.fetchall()
+    return [_row_to_template(r) for r in rows]
+
+
+async def get_template_by_id(template_id: str) -> dict[str, Any] | None:
+    db = await get_db()
+    async with db.execute("SELECT * FROM templates WHERE id = ?", (template_id,)) as cur:
+        row = await cur.fetchone()
+    return _row_to_template(row) if row else None
+
+
+async def get_template_by_name(name: str) -> dict[str, Any] | None:
+    db = await get_db()
+    async with db.execute("SELECT * FROM templates WHERE name = ?", (name,)) as cur:
+        row = await cur.fetchone()
+    return _row_to_template(row) if row else None
+
+
+async def delete_template(template_id: str) -> None:
+    db = await get_db()
+    await db.execute("DELETE FROM templates WHERE id = ?", (template_id,))
     await db.commit()

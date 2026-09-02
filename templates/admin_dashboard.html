@@ -227,8 +227,16 @@
         <p class="text-xs text-muted/70 mt-1">Checked using the guest's browser location against Home Assistant's home zone. Self-reported, so treat as friction against casual misuse, not a hard guarantee.</p>
       </div>
       <div>
-        <label class="block text-xs font-mono uppercase tracking-wider text-muted mb-1.5">Entities</label>
+        <div class="flex items-center justify-between mb-1.5">
+          <label for="f-template" class="block text-xs font-mono uppercase tracking-wider text-muted">Entities</label>
+          <button type="button" data-action="open-templates-modal" class="text-xs text-accent hover:underline">Manage templates</button>
+        </div>
+        <select id="f-template" data-action="load-template"
+          class="w-full px-3 py-2.5 rounded-xl border border-border-light dark:border-border-dark bg-bg-light dark:bg-bg-dark text-sm outline-none focus:border-primary cursor-pointer mb-2">
+          <option value="">Load from template…</option>
+        </select>
         <div id="create-picker"></div>
+        <button type="button" data-action="save-as-template" class="mt-2 text-xs text-accent hover:underline">+ Save current selection as template</button>
       </div>
     </div>
     <div id="create-error" role="alert" class="text-primary text-xs min-h-[18px] mt-2"></div>
@@ -345,6 +353,20 @@
   </div>
 </div>
 
+<!-- Manage Templates Modal -->
+<div class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-soot/40 dark:bg-black/50 backdrop-blur-sm" id="templates-modal">
+  <div class="modal-animate bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-2xl p-6 w-full max-w-sm max-h-[80vh] overflow-y-auto shadow-xl" role="dialog" aria-modal="true" aria-labelledby="templates-modal-title">
+    <div class="flex items-center justify-between mb-3">
+      <h2 id="templates-modal-title" class="text-lg font-serif">Entity Templates</h2>
+      <button data-action="close-modal" data-modal="templates" aria-label="Close dialog" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-soot/5 dark:hover:bg-white/5 text-muted transition-colors">
+        <span aria-hidden="true" class="material-symbols-outlined text-xl">close</span>
+      </button>
+    </div>
+    <p class="text-xs text-muted mb-3">Saved entity selections you can load when creating a new token.</p>
+    <ul id="templates-list" role="list" class="space-y-2 list-none"></ul>
+  </div>
+</div>
+
 <!-- Confirm Modal -->
 <div class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-soot/40 dark:bg-black/50 backdrop-blur-sm" id="confirm-modal">
   <div class="modal-animate bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-2xl p-6 w-full max-w-sm shadow-xl text-center" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
@@ -396,6 +418,7 @@ function guestLink(slug) {
 }
 let allEntities = [];
 let tokens = [];
+let templates = [];
 let activity = [];
 let activityExpanded = false;
 const ACTIVITY_COLLAPSED_COUNT = 3;
@@ -453,6 +476,7 @@ function showApp() {
   loadTokens();
   loadActivity();
   loadEntities();
+  loadTemplates();
   startAutoRefresh();
   requestAnimationFrame(updateThemeToggles);
 }
@@ -697,6 +721,10 @@ function renderTokens() {
             <span aria-hidden="true" class="material-symbols-outlined text-sm">block</span> Revoke
           </button>
         </div>
+        <button data-id="${esc(t.id)}" data-label="${esc(t.label)}" data-action="confirm-rotate-slug"
+          class="w-full mt-2 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-display font-medium border border-border-light dark:border-border-dark hover:bg-soot/5 dark:hover:bg-white/5 transition-colors">
+          <span aria-hidden="true" class="material-symbols-outlined text-sm">sync</span> Rotate Link
+        </button>
         <button data-id="${esc(t.id)}" data-label="${esc(t.label)}" data-action="open-pin-modal"
           class="w-full mt-2 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-display font-medium border transition-colors ${t.pin ? 'border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 bg-violet-500/10 hover:bg-violet-500/20' : 'border-border-light dark:border-border-dark hover:bg-soot/5 dark:hover:bg-white/5'}">
           <span aria-hidden="true" class="material-symbols-outlined text-sm">${t.pin ? 'lock' : 'lock_open'}</span> ${t.pin ? 'PIN Protected' : 'Add PIN'}
@@ -714,6 +742,81 @@ function renderTokens() {
 async function loadEntities() {
   const r = await fetch(`${BASE}/admin/ha/entities`);
   if (r.ok) allEntities = await r.json();
+}
+
+// ── Entity Templates ──────────────────────────────────────────────────
+async function loadTemplates() {
+  const r = await fetch(`${BASE}/admin/templates`);
+  if (r.ok) { templates = await r.json(); renderTemplateDropdown(); }
+}
+
+function renderTemplateDropdown() {
+  const select = document.getElementById('f-template');
+  const current = select.value;
+  select.innerHTML = `<option value="">Load from template…</option>` +
+    templates.map(t => `<option value="${esc(t.id)}">${esc(t.name)} (${t.entity_ids.length})</option>`).join('');
+  select.value = templates.some(t => t.id === current) ? current : '';
+}
+
+function loadTemplateIntoPicker(templateId) {
+  const t = templates.find(x => x.id === templateId);
+  if (!t) return;
+  createPicker.selected = new Set(t.entity_ids);
+  renderPicker('create-picker', createPicker);
+  showToast(`Loaded "${t.name}"`, 'success');
+}
+
+async function saveCurrentSelectionAsTemplate() {
+  if (createPicker.selected.size === 0) { showToast('Select at least one entity first', 'error'); return; }
+  const name = prompt('Template name:');
+  if (!name || !name.trim()) return;
+  const r = await fetch(`${BASE}/admin/templates`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ name: name.trim(), entity_ids: [...createPicker.selected] }),
+  });
+  if (r.ok) {
+    await loadTemplates();
+    showToast('Template saved', 'success');
+  } else {
+    const err = await r.json().catch(() => ({}));
+    showToast(err.detail || 'Error saving template', 'error');
+  }
+}
+
+function openTemplatesModal() {
+  renderTemplatesList();
+  openModal('templates-modal');
+}
+function closeTemplatesModal() { closeModal('templates-modal'); }
+
+function renderTemplatesList() {
+  const list = document.getElementById('templates-list');
+  if (!templates.length) {
+    list.innerHTML = `<li class="text-center py-6 text-sm text-muted">No templates saved yet.</li>`;
+    return;
+  }
+  list.innerHTML = templates.map(t => `<li class="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border border-border-light dark:border-border-dark">
+    <div class="min-w-0">
+      <div class="text-sm font-medium truncate">${esc(t.name)}</div>
+      <div class="text-xs text-muted">${t.entity_ids.length} entities</div>
+    </div>
+    <button data-id="${esc(t.id)}" data-action="delete-template" aria-label="Delete ${esc(t.name)}"
+      class="w-8 h-8 flex items-center justify-center rounded-lg text-primary hover:bg-primary/10 transition-colors flex-shrink-0">
+      <span aria-hidden="true" class="material-symbols-outlined text-lg">delete</span>
+    </button>
+  </li>`).join('');
+}
+
+async function deleteTemplateById(templateId) {
+  const r = await fetch(`${BASE}/admin/templates/${templateId}`, { method: 'DELETE' });
+  if (r.ok) {
+    await loadTemplates();
+    renderTemplatesList();
+    showToast('Template deleted', 'success');
+  } else {
+    showToast('Error deleting template', 'error');
+  }
 }
 
 // ── Entity Picker Component ───────────────────────────────────────────
@@ -824,6 +927,7 @@ function openCreateModal(preset = {}) {
   document.getElementById('f-pin').value = '';
   document.getElementById('f-pin-remember').checked = true;
   document.getElementById('f-require-proximity').checked = false;
+  document.getElementById('f-template').value = '';
   document.getElementById('f-expiry').value = preset.expiryValue || '86400';
   document.getElementById('create-error').textContent = '';
   document.getElementById('f-custom-expiry').classList.add('hidden');
@@ -1120,6 +1224,21 @@ async function activateToken(id) {
   }
 }
 
+function confirmRotateSlug(id, label) {
+  openConfirmModal('Rotate Link', `This immediately invalidates ${label}'s current link. A new link is generated with the same entities, expiry, and PIN settings.`, async () => {
+    const r = await fetch(`${BASE}/admin/tokens/${id}/rotate-slug`, {method: 'POST'});
+    if (r.ok) {
+      const token = await r.json();
+      showToast('Link rotated — new URL copied', 'success');
+      loadTokens();
+      loadActivity();
+      copyUrl(guestLink(token.slug));
+    } else {
+      showToast('Error rotating link', 'error');
+    }
+  });
+}
+
 async function confirmDelete(id) {
   openConfirmModal('Delete Token', 'This will permanently remove the token record.', async () => {
     const r = await fetch(`${BASE}/admin/tokens/${id}`, {method: 'DELETE'});
@@ -1145,13 +1264,14 @@ function closeModal(id) {
   releaseFocus();
 }
 
-['create-modal', 'edit-modal', 'extend-modal', 'pin-modal', 'confirm-modal', 'qr-modal'].forEach(id => {
+['create-modal', 'edit-modal', 'extend-modal', 'pin-modal', 'templates-modal', 'confirm-modal', 'qr-modal'].forEach(id => {
   document.getElementById(id).addEventListener('click', e => {
     if (e.target === e.currentTarget) {
       if (id === 'create-modal') closeCreateModal();
       else if (id === 'edit-modal') closeEditModal();
       else if (id === 'extend-modal') closeExtendModal();
       else if (id === 'pin-modal') closePinModal();
+      else if (id === 'templates-modal') closeTemplatesModal();
       else if (id === 'confirm-modal') closeConfirmModal();
       else if (id === 'qr-modal') closeQrModal();
     }
@@ -1305,6 +1425,7 @@ document.addEventListener('keydown', e => {
     const closers = {
       'qr-modal': closeQrModal,
       'confirm-modal': closeConfirmModal,
+      'templates-modal': closeTemplatesModal,
       'pin-modal': closePinModal,
       'extend-modal': closeExtendModal,
       'edit-modal': closeEditModal,
@@ -1382,7 +1503,7 @@ document.addEventListener('click', e => {
 
     // Close any modal
     case 'close-modal': {
-      const modalMap = { create: closeCreateModal, edit: closeEditModal, extend: closeExtendModal, pin: closePinModal, confirm: closeConfirmModal, qr: closeQrModal };
+      const modalMap = { create: closeCreateModal, edit: closeEditModal, extend: closeExtendModal, pin: closePinModal, templates: closeTemplatesModal, confirm: closeConfirmModal, qr: closeQrModal };
       const closer = modalMap[el.dataset.modal];
       if (closer) closer();
       break;
@@ -1394,6 +1515,7 @@ document.addEventListener('click', e => {
     case 'activate-token': activateToken(el.dataset.id); break;
     case 'confirm-revoke': confirmRevoke(el.dataset.id); break;
     case 'confirm-delete': confirmDelete(el.dataset.id); break;
+    case 'confirm-rotate-slug': confirmRotateSlug(el.dataset.id, el.dataset.label); break;
 
     // PIN modal
     case 'open-pin-modal': openPinModal(el.dataset.id, el.dataset.label); break;
@@ -1402,6 +1524,11 @@ document.addEventListener('click', e => {
     case 'revoke-access-code': revokeAccessCode(); break;
     case 'copy-access-code': copyAccessCodeLink(); break;
     case 'toggle-proximity': toggleProximity(el.dataset.id); break;
+
+    // Templates
+    case 'open-templates-modal': openTemplatesModal(); break;
+    case 'save-as-template': saveCurrentSelectionAsTemplate(); break;
+    case 'delete-template': deleteTemplateById(el.dataset.id); break;
 
     // Entity picker
     case 'picker-remove': pickerRemove(el.dataset.container, el.dataset.entity); break;
@@ -1423,6 +1550,9 @@ document.addEventListener('keydown', e => {
 document.addEventListener('change', e => {
   if (e.target.dataset.action === 'toggle-custom-expiry') {
     toggleCustomExpiry(e.target.dataset.prefix);
+  }
+  if (e.target.dataset.action === 'load-template' && e.target.value) {
+    loadTemplateIntoPicker(e.target.value);
   }
 });
 
