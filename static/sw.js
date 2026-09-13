@@ -44,10 +44,13 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // stale-while-revalidate
+  // stale-while-revalidate — ignoreSearch so this still hits the SHELL_ASSETS
+  // precached at install (keyed without the `?v=` cache-busting query param);
+  // CACHE_VERSION itself already changes every release, so staleness across
+  // releases is handled by the activate handler's old-cache cleanup instead.
   if (url.pathname.startsWith('/static/')) {
     event.respondWith(
-      caches.match(event.request).then(cached => {
+      caches.match(event.request, { ignoreSearch: true }).then(cached => {
         const fetchPromise = fetch(event.request).then(response => {
           const clone = response.clone();
           caches.open(CACHE_VERSION).then(cache => cache.put(event.request, clone));
