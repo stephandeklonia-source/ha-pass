@@ -9,6 +9,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Starting with this release, versions follow Home Assistant Core's
 `YYYY.M.PATCH` scheme instead of semver.
 
+## [2026.7.12] — fork release
+
+### Changed
+- **Proximity requirement is now per-entity, not per-token/domain** — the
+  "require proximity" check (introduced in 2026.7.9) was hardcoded to
+  the lock and alarm_control_panel domains. It's now a toggle on each
+  individual entity in the entity picker (tap the location pin next to a
+  selected entity), so it can be attached to any entity — for example a
+  helper button wired to a door relay (`input_button.open_door`) —
+  without gating every other entity of that domain in the same token.
+  Existing tokens that had the old blanket toggle on keep it for their
+  lock/alarm entities automatically.
+
 ## [2026.7.11] — fork release
 
 ### Added

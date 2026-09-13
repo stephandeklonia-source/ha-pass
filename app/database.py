@@ -174,7 +174,7 @@ async def create_token(
     starts_at: int | None = None,         # NEW
     pin: str | None = None,
     remember_pin: bool = True,
-    require_proximity: bool = False,
+    proximity_entity_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     db = await get_db()
     token_id = str(uuid.uuid4())
@@ -184,19 +184,20 @@ async def create_token(
 
     # Deduplicate entity IDs
     entity_ids = list(dict.fromkeys(entity_ids))
+    proximity_set = set(proximity_entity_ids or [])
 
     try:
         await db.execute("BEGIN IMMEDIATE")
         await db.execute(
             """INSERT INTO tokens
-               (id, slug, label, created_at, starts_at, expires_at, ip_allowlist, pin_encrypted, remember_pin, require_proximity)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (token_id, slug, label, now, starts_at, expires_at, ip_json, pin_encrypted, int(remember_pin), int(require_proximity)),
+               (id, slug, label, created_at, starts_at, expires_at, ip_allowlist, pin_encrypted, remember_pin)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (token_id, slug, label, now, starts_at, expires_at, ip_json, pin_encrypted, int(remember_pin)),
         )
         if entity_ids:
             await db.executemany(
-                "INSERT INTO token_entities (token_id, entity_id) VALUES (?, ?)",
-                [(token_id, eid) for eid in entity_ids],
+                "INSERT INTO token_entities (token_id, entity_id, require_proximity) VALUES (?, ?, ?)",
+                [(token_id, eid, int(eid in proximity_set)) for eid in entity_ids],
             )
         await db.execute("COMMIT")
     except Exception:
@@ -222,7 +223,8 @@ async def get_token_by_id(token_id: str) -> dict[str, Any] | None:
 async def list_tokens() -> list[dict[str, Any]]:
     db = await get_db()
     async with db.execute(
-        """SELECT t.*, COUNT(te.entity_id) AS entity_count
+        """SELECT t.*, COUNT(te.entity_id) AS entity_count,
+                  COUNT(CASE WHEN te.require_proximity = 1 THEN 1 END) AS proximity_count
            FROM tokens t
            LEFT JOIN token_entities te ON te.token_id = t.id
            GROUP BY t.id
@@ -241,16 +243,26 @@ async def get_token_entities(token_id: str) -> list[str]:
     return [r["entity_id"] for r in rows]
 
 
-async def update_token_entities(token_id: str, entity_ids: list[str]) -> None:
+async def get_proximity_entity_ids(token_id: str) -> set[str]:
+    db = await get_db()
+    async with db.execute(
+        "SELECT entity_id FROM token_entities WHERE token_id = ? AND require_proximity = 1", (token_id,)
+    ) as cur:
+        rows = await cur.fetchall()
+    return {r["entity_id"] for r in rows}
+
+
+async def update_token_entities(token_id: str, entity_ids: list[str], proximity_entity_ids: list[str] | None = None) -> None:
     db = await get_db()
     # Deduplicate entity IDs
     entity_ids = list(dict.fromkeys(entity_ids))
+    proximity_set = set(proximity_entity_ids or [])
     try:
         await db.execute("BEGIN IMMEDIATE")
         await db.execute("DELETE FROM token_entities WHERE token_id = ?", (token_id,))
         await db.executemany(
-            "INSERT INTO token_entities (token_id, entity_id) VALUES (?, ?)",
-            [(token_id, eid) for eid in entity_ids],
+            "INSERT INTO token_entities (token_id, entity_id, require_proximity) VALUES (?, ?, ?)",
+            [(token_id, eid, int(eid in proximity_set)) for eid in entity_ids],
         )
         await db.execute("COMMIT")
     except Exception:
@@ -282,15 +294,6 @@ async def update_token_pin(token_id: str, pin: str | None, remember_pin: bool = 
     await db.execute(
         "UPDATE tokens SET pin_encrypted = ?, remember_pin = ? WHERE id = ?",
         (pin_encrypted, int(remember_pin), token_id),
-    )
-    await db.commit()
-
-
-async def update_token_proximity(token_id: str, require_proximity: bool) -> None:
-    db = await get_db()
-    await db.execute(
-        "UPDATE tokens SET require_proximity = ? WHERE id = ?",
-        (int(require_proximity), token_id),
     )
     await db.commit()
 

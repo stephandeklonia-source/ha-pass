@@ -220,13 +220,6 @@
         </label>
       </div>
       <div>
-        <label class="flex items-center gap-2 text-xs text-muted cursor-pointer">
-          <input id="f-require-proximity" type="checkbox" class="rounded border-border-light dark:border-border-dark">
-          Require guest to be near the property to use locks/alarm
-        </label>
-        <p class="text-xs text-muted/70 mt-1">Checked using the guest's browser location against Home Assistant's home zone. Self-reported, so treat as friction against casual misuse, not a hard guarantee.</p>
-      </div>
-      <div>
         <div class="flex items-center justify-between mb-1.5">
           <label for="f-template" class="block text-xs font-mono uppercase tracking-wider text-muted">Entities</label>
           <button type="button" data-action="open-templates-modal" class="text-xs text-accent hover:underline">Manage templates</button>
@@ -236,6 +229,7 @@
           <option value="">Load from template…</option>
         </select>
         <div id="create-picker"></div>
+        <p class="text-xs text-muted/70 mt-1.5">Tap <span aria-hidden="true" class="material-symbols-outlined text-sm align-middle">location_off</span> on a selected entity to require the guest be near the property to use it — checked against Home Assistant's home zone. Self-reported by the guest's browser, so treat it as friction against casual misuse, not a hard guarantee.</p>
         <button type="button" data-action="save-as-template" class="mt-2 text-xs text-accent hover:underline">+ Save current selection as template</button>
       </div>
     </div>
@@ -258,6 +252,7 @@
     </div>
     <div id="edit-token-label" class="text-sm text-muted mb-4"></div>
     <div id="edit-picker"></div>
+    <p class="text-xs text-muted/70 mt-1.5">Tap <span aria-hidden="true" class="material-symbols-outlined text-sm align-middle">location_off</span> on a selected entity to require the guest be near the property to use it.</p>
     <div id="edit-error" role="alert" class="text-primary text-xs min-h-[18px] mt-2"></div>
     <div class="flex justify-end gap-2 mt-5 pt-4 border-t border-border-light dark:border-border-dark">
       <button data-action="close-modal" data-modal="edit" class="px-4 py-2 text-sm font-display font-medium rounded-xl border border-border-light dark:border-border-dark hover:bg-soot/5 dark:hover:bg-white/5 transition-colors">Cancel</button>
@@ -424,8 +419,8 @@ let activityExpanded = false;
 const ACTIVITY_COLLAPSED_COUNT = 3;
 
 // Picker state (separate for create vs edit)
-let createPicker = { selected: new Set(), filter: 'all', search: '' };
-let editPicker = { selected: new Set(), filter: 'all', search: '' };
+let createPicker = { selected: new Set(), filter: 'all', search: '', proximity: new Set() };
+let editPicker = { selected: new Set(), filter: 'all', search: '', proximity: new Set() };
 let editTokenId = null;
 
 // ── Auth ──────────────────────────────────────────────────────────────
@@ -729,10 +724,9 @@ function renderTokens() {
           class="w-full mt-2 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-display font-medium border transition-colors ${t.pin ? 'border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 bg-violet-500/10 hover:bg-violet-500/20' : 'border-border-light dark:border-border-dark hover:bg-soot/5 dark:hover:bg-white/5'}">
           <span aria-hidden="true" class="material-symbols-outlined text-sm">${t.pin ? 'lock' : 'lock_open'}</span> ${t.pin ? 'PIN Protected' : 'Add PIN'}
         </button>
-        <button data-id="${esc(t.id)}" data-action="toggle-proximity"
-          class="w-full mt-2 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-display font-medium border transition-colors ${t.require_proximity ? 'border-teal-300 dark:border-teal-700 text-teal-600 dark:text-teal-400 bg-teal-500/10 hover:bg-teal-500/20' : 'border-border-light dark:border-border-dark hover:bg-soot/5 dark:hover:bg-white/5'}">
-          <span aria-hidden="true" class="material-symbols-outlined text-sm">${t.require_proximity ? 'location_on' : 'location_off'}</span> ${t.require_proximity ? 'Proximity Required' : 'No Proximity Check'}
-        </button>
+        ${t.require_proximity ? `<div class="w-full mt-2 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-display font-medium border border-teal-300 dark:border-teal-700 text-teal-600 dark:text-teal-400 bg-teal-500/10">
+          <span aria-hidden="true" class="material-symbols-outlined text-sm">location_on</span> Proximity Required (edit entities to change)
+        </div>` : ''}
       </div>
     </div></li>`;
   }).join('');
@@ -860,16 +854,22 @@ function renderPicker(containerId, pickerState) {
     <div class="mb-3">
       <div class="text-[11px] font-mono font-bold uppercase tracking-wider text-muted mb-1.5 px-1">Selected (${allSelected.length})</div>
       <ul class="picker-list max-h-44 overflow-y-auto border border-border-light dark:border-border-dark rounded-xl bg-surface-light dark:bg-surface-dark list-none" role="list">
-        ${allSelected.map(e => `<li class="flex items-center gap-3 px-3 py-2.5 border-b border-border-light dark:border-border-dark last:border-b-0 hover:bg-soot/[0.03] dark:hover:bg-white/5 cursor-pointer transition-colors" data-action="picker-remove" data-container="${containerId}" data-entity="${esc(e.entity_id)}" role="button" tabindex="0" aria-label="Remove ${esc(e.friendly_name || e.entity_id)}">
+        ${allSelected.map(e => { const hasProximity = pickerState.proximity.has(e.entity_id); return `<li class="flex items-center gap-2 px-3 py-2.5 border-b border-border-light dark:border-border-dark last:border-b-0 hover:bg-soot/[0.03] dark:hover:bg-white/5 transition-colors">
           <div class="w-7 h-7 rounded-full ${DOMAIN_COLORS[e.domain]?.icon || 'bg-gray-500'} flex items-center justify-center flex-shrink-0">
             <span aria-hidden="true" class="material-symbols-outlined text-white text-sm">${PICKER_ICONS[e.domain] || 'devices'}</span>
           </div>
-          <div class="flex-1 min-w-0">
+          <div class="flex-1 min-w-0 cursor-pointer" data-action="picker-remove" data-container="${containerId}" data-entity="${esc(e.entity_id)}" role="button" tabindex="0" aria-label="Remove ${esc(e.friendly_name || e.entity_id)}">
             <div class="text-sm font-medium truncate">${esc(e.friendly_name || e.entity_id)}</div>
             <div class="text-[11px] text-muted font-mono truncate">${esc(e.entity_id)}</div>
           </div>
-          <span aria-hidden="true" class="material-symbols-outlined text-primary text-lg flex-shrink-0">remove_circle</span>
-        </li>`).join('')}
+          <button type="button" data-action="picker-toggle-proximity" data-container="${containerId}" data-entity="${esc(e.entity_id)}"
+            aria-pressed="${hasProximity}" aria-label="${hasProximity ? 'Proximity required — click to remove' : 'Require proximity to use this'}"
+            title="Require guest to be near the property to use this entity"
+            class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${hasProximity ? 'bg-teal-500/15 text-teal-600 dark:text-teal-400' : 'text-muted/40 hover:text-muted hover:bg-soot/5 dark:hover:bg-white/5'}">
+            <span aria-hidden="true" class="material-symbols-outlined text-base">${hasProximity ? 'location_on' : 'location_off'}</span>
+          </button>
+          <span aria-hidden="true" class="material-symbols-outlined text-primary text-lg flex-shrink-0 cursor-pointer" data-action="picker-remove" data-container="${containerId}" data-entity="${esc(e.entity_id)}">remove_circle</span>
+        </li>`; }).join('')}
       </ul>
     </div>` : ''}
     <div class="mb-2">
@@ -914,20 +914,28 @@ function pickerAdd(containerId, entityId) {
 }
 
 function pickerRemove(containerId, entityId) {
-  getPickerState(containerId).selected.delete(entityId);
-  renderPicker(containerId, getPickerState(containerId));
+  const state = getPickerState(containerId);
+  state.selected.delete(entityId);
+  state.proximity.delete(entityId);
+  renderPicker(containerId, state);
+}
+
+function pickerToggleProximity(containerId, entityId) {
+  const state = getPickerState(containerId);
+  if (state.proximity.has(entityId)) state.proximity.delete(entityId);
+  else state.proximity.add(entityId);
+  renderPicker(containerId, state);
 }
 
 // ── Create Token Modal ────────────────────────────────────────────────
 function openCreateModal(preset = {}) {
-  createPicker = { selected: new Set(preset.entityIds || []), filter: 'all', search: '' };
+  createPicker = { selected: new Set(preset.entityIds || []), filter: 'all', search: '', proximity: new Set(preset.proximityEntityIds || []) };
   document.getElementById('create-modal-title').textContent = preset.title || 'Create Guest Token';
   document.getElementById('f-label').value = preset.label || '';
   document.getElementById('f-slug').value = '';
   document.getElementById('f-ip').value = (preset.ipAllowlist || []).join(', ');
   document.getElementById('f-pin').value = '';
   document.getElementById('f-pin-remember').checked = true;
-  document.getElementById('f-require-proximity').checked = false;
   document.getElementById('f-template').value = '';
   document.getElementById('f-expiry').value = preset.expiryValue || '86400';
   document.getElementById('create-error').textContent = '';
@@ -962,7 +970,6 @@ async function submitCreate() {
   const pin = document.getElementById('f-pin').value.trim() || null;
   if (pin && pin.length < 4) { errEl.textContent = 'PIN must be at least 4 characters.'; return; }
   const rememberPin = document.getElementById('f-pin-remember').checked;
-  const requireProximity = document.getElementById('f-require-proximity').checked;
 
   const body = {
     label, slug,
@@ -972,7 +979,7 @@ async function submitCreate() {
     ip_allowlist: ipList,
     pin,
     remember_pin: rememberPin,
-    require_proximity: requireProximity,
+    proximity_entity_ids: [...createPicker.proximity],
   };
 
   const r = await fetch(`${BASE}/admin/tokens`, {
@@ -1003,6 +1010,7 @@ async function duplicateToken(tokenId) {
     title: 'Duplicate Guest Token',
     label: `${token.label} copy`,
     entityIds: token.entity_ids || [],
+    proximityEntityIds: token.proximity_entity_ids || [],
     ipAllowlist: token.ip_allowlist || [],
     expiryValue: token.expires_at === NEVER_EXPIRES ? String(NEVER_EXPIRES) : '86400',
   });
@@ -1011,7 +1019,7 @@ async function duplicateToken(tokenId) {
 // ── Edit Entities Modal ───────────────────────────────────────────────
 async function openEditModal(tokenId) {
   editTokenId = tokenId;
-  editPicker = { selected: new Set(), filter: 'all', search: '' };
+  editPicker = { selected: new Set(), filter: 'all', search: '', proximity: new Set() };
   document.getElementById('edit-error').textContent = '';
   document.getElementById('edit-token-label').textContent = 'Loading...';
   document.getElementById('edit-picker').innerHTML = '<div class="text-center py-8 text-muted text-sm">Loading entities...</div>';
@@ -1023,6 +1031,9 @@ async function openEditModal(tokenId) {
   document.getElementById('edit-token-label').textContent = `Editing: ${token.label}`;
   if (token.entity_ids) {
     token.entity_ids.forEach(id => editPicker.selected.add(id));
+  }
+  if (token.proximity_entity_ids) {
+    token.proximity_entity_ids.forEach(id => editPicker.proximity.add(id));
   }
   renderPicker('edit-picker', editPicker);
 }
@@ -1036,7 +1047,7 @@ async function submitEditEntities() {
   const r = await fetch(`${BASE}/admin/tokens/${editTokenId}/entities`, {
     method: 'PATCH',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ entity_ids: [...editPicker.selected] }),
+    body: JSON.stringify({ entity_ids: [...editPicker.selected], proximity_entity_ids: [...editPicker.proximity] }),
   });
 
   if (r.ok) {
@@ -1181,22 +1192,6 @@ function copyAccessCodeLink() {
 }
 
 // ── Proximity Requirement Toggle ──────────────────────────────────────
-async function toggleProximity(tokenId) {
-  const t = tokens.find(x => x.id === tokenId);
-  const next = !t?.require_proximity;
-  const r = await fetch(`${BASE}/admin/tokens/${tokenId}/proximity`, {
-    method: 'PATCH',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ require_proximity: next }),
-  });
-  if (r.ok) {
-    showToast(next ? 'Proximity requirement enabled' : 'Proximity requirement disabled', 'success');
-    loadTokens();
-  } else {
-    showToast('Error updating proximity setting', 'error');
-  }
-}
-
 // ── Confirm Modals ────────────────────────────────────────────────────
 let _confirmCallback = null;
 
@@ -1524,7 +1519,6 @@ document.addEventListener('click', e => {
     case 'generate-access-code': generateAccessCode(); break;
     case 'revoke-access-code': revokeAccessCode(); break;
     case 'copy-access-code': copyAccessCodeLink(); break;
-    case 'toggle-proximity': toggleProximity(el.dataset.id); break;
 
     // Templates
     case 'open-templates-modal': openTemplatesModal(); break;
@@ -1534,6 +1528,7 @@ document.addEventListener('click', e => {
     // Entity picker
     case 'picker-remove': pickerRemove(el.dataset.container, el.dataset.entity); break;
     case 'picker-add': pickerAdd(el.dataset.container, el.dataset.entity); break;
+    case 'picker-toggle-proximity': pickerToggleProximity(el.dataset.container, el.dataset.entity); break;
     case 'picker-filter': setPickerFilter(el.dataset.container, el.dataset.domain); break;
   }
 });

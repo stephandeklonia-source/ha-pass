@@ -27,7 +27,6 @@ from app.models import (
     CommandRequest,
     FORBIDDEN_DATA_KEYS,
     NEVER_EXPIRES_SECONDS,
-    PROXIMITY_GATED_DOMAINS,
 )
 from app.rate_limiter import rate_limiter
 
@@ -103,17 +102,20 @@ def _haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> flo
     return 2 * EARTH_RADIUS_METERS * math.asin(math.sqrt(a))
 
 
-async def _enforce_proximity(row, body: CommandRequest, entity_domain: str) -> None:
+async def _enforce_proximity(row, body: CommandRequest) -> None:
     """Raise if a proximity-gated command isn't backed by a nearby location.
 
-    Only applies when the token has require_proximity set AND the entity's
-    domain is sensitive enough to gate (locks, alarm). The guest-reported
-    coordinates are self-supplied and easily spoofed, so this is friction
-    against casual misuse, not a hard security boundary — same caveat as
-    the IP allowlist. Fails closed: a missing coordinate or an unreachable
-    home zone blocks the command rather than silently letting it through.
+    Gating is per-entity (admin picks which entities in a token need it),
+    not tied to a fixed set of domains — a helper button wired to a door
+    relay can be gated the same way a native lock would be. The
+    guest-reported coordinates are self-supplied and easily spoofed, so
+    this is friction against casual misuse, not a hard security boundary
+    — same caveat as the IP allowlist. Fails closed: a missing coordinate
+    or an unreachable home zone blocks the command rather than silently
+    letting it through.
     """
-    if not row.get("require_proximity") or entity_domain not in PROXIMITY_GATED_DOMAINS:
+    gated_entities = await db.get_proximity_entity_ids(row["id"])
+    if body.entity_id not in gated_entities:
         return
     if body.latitude is None or body.longitude is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Location required for this action")
@@ -353,7 +355,7 @@ async def guest_pwa(
         "expires_at": row["expires_at"],
         "contact_message": settings.contact_message,
         "never_expires": NEVER_EXPIRES_SECONDS,
-        "require_proximity": bool(row.get("require_proximity")),
+        "proximity_entity_ids": sorted(await db.get_proximity_entity_ids(row["id"])),
     })
     return templates.TemplateResponse(request, "guest_pwa.html", ctx)
 
@@ -564,7 +566,7 @@ async def guest_command(
             detail=f"Service '{svc_name}' not allowed for {entity_domain}",
         )
 
-    await _enforce_proximity(row, body, entity_domain)
+    await _enforce_proximity(row, body)
 
     clean_data = {k: v for k, v in body.data.items() if k not in FORBIDDEN_DATA_KEYS}
     service_data = {**clean_data, "entity_id": body.entity_id}

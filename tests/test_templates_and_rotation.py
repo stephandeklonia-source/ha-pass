@@ -112,7 +112,7 @@ async def test_rotation_preserves_entities_and_settings(client, admin_session, m
     now = int(time.time())
     token = await db.create_token(
         label="Reusable", slug="reusable-config", entity_ids=["lock.front_door"],
-        expires_at=now + 3600, ip_allowlist=["10.0.0.0/8"], pin="4821", require_proximity=True,
+        expires_at=now + 3600, ip_allowlist=["10.0.0.0/8"], pin="4821", proximity_entity_ids=["lock.front_door"],
     )
     resp = await client.post(f"/admin/tokens/{token['id']}/rotate-slug", cookies=admin_session)
     assert resp.status_code == 200
@@ -121,6 +121,7 @@ async def test_rotation_preserves_entities_and_settings(client, admin_session, m
     assert body["ip_allowlist"] == ["10.0.0.0/8"]
     assert body["pin"] == "4821"
     assert body["require_proximity"] is True
+    assert body["proximity_entity_ids"] == ["lock.front_door"]
 
 
 async def test_rotation_clears_access_code(client, admin_session, mock_ha_client, test_db):

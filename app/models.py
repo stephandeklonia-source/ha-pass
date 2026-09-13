@@ -38,12 +38,6 @@ SUPPORTED_DOMAINS: set[str] = set(ALLOWED_SERVICES) | READ_ONLY_DOMAINS
 # Keys that could bypass the entity allowlist if forwarded to HA
 FORBIDDEN_DATA_KEYS = {"entity_id", "device_id", "area_id", "floor_id", "label_id"}
 
-# Domains sensitive enough that a token can require the guest's browser to
-# report a location inside HA's home zone before the command is allowed.
-# The guest-supplied coordinates are self-reported and easily spoofed —
-# this is friction against casual misuse, not a cryptographic guarantee.
-PROXIMITY_GATED_DOMAINS: set[str] = {"lock", "alarm_control_panel"}
-
 
 class AdminLoginRequest(BaseModel):
     username: str
@@ -59,11 +53,16 @@ class TokenCreateRequest(BaseModel):
     ip_allowlist: list[str] | None = None
     pin: str | None = Field(default=None, min_length=4, max_length=20)
     remember_pin: bool = True
-    require_proximity: bool = False
+    # Entities within entity_ids that require the guest to be near the
+    # property (per HA's home zone) before a command on them is allowed.
+    # Not restricted to a fixed domain — e.g. a helper button wired to a
+    # door relay can be gated the same way a native lock would be.
+    proximity_entity_ids: list[str] = Field(default_factory=list)
 
 
 class TokenUpdateEntitiesRequest(BaseModel):
     entity_ids: list[str] = Field(..., min_length=1)
+    proximity_entity_ids: list[str] = Field(default_factory=list)
 
 
 class TokenUpdateExpiryRequest(BaseModel):
@@ -73,10 +72,6 @@ class TokenUpdateExpiryRequest(BaseModel):
 class TokenUpdatePinRequest(BaseModel):
     pin: str | None = Field(default=None, min_length=4, max_length=20)
     remember_pin: bool = True
-
-
-class TokenUpdateProximityRequest(BaseModel):
-    require_proximity: bool
 
 
 class TemplateCreateRequest(BaseModel):
@@ -113,6 +108,7 @@ class TokenResponse(BaseModel):
     entity_ids: list[str] | None = None
     pin: str | None = None
     remember_pin: bool = True
-    require_proximity: bool = False
+    require_proximity: bool = False       # true if ANY entity below requires proximity
+    proximity_entity_ids: list[str] | None = None
     has_access_code: bool = False
     access_code: str | None = None

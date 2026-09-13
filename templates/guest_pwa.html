@@ -256,8 +256,7 @@ const EXPIRES_AT = {{ expires_at | tojson }};
 const NEVER_EXPIRES = {{ never_expires }};
 const STARTS_AT = {{ (starts_at | tojson) if pending else 'null' }};   // NEW
 const PREVIEW_ENTITY_IDS = {{ (preview_entity_ids | tojson) if pending else '[]' }};   // NEW
-const REQUIRE_PROXIMITY = {{ 'true' if require_proximity else 'false' }};
-const PROXIMITY_GATED_DOMAINS = ['lock', 'alarm_control_panel'];
+const PROXIMITY_ENTITY_IDS = {{ proximity_entity_ids | tojson }};
 let states = {};
 let entityOrder = [];
 let sheetCallback = null;
@@ -1379,7 +1378,7 @@ function geoErrorMessage(err) {
 
 async function sendCmd(entityId, domain, service, extraData = {}) {
   let latitude = null, longitude = null;
-  if (REQUIRE_PROXIMITY && PROXIMITY_GATED_DOMAINS.includes(domain)) {
+  if (PROXIMITY_ENTITY_IDS.includes(entityId)) {
     showToast('Checking your location…', 'info');
     try {
       const coords = await getGeoPosition();

@@ -20,7 +20,6 @@ from app.models import (
     TokenUpdateEntitiesRequest,
     TokenUpdateExpiryRequest,
     TokenUpdatePinRequest,
-    TokenUpdateProximityRequest,
 )
 from app.rate_limiter import RateLimiter
 
@@ -86,7 +85,7 @@ async def logout(response: Response, session_id: str = Depends(require_admin)) -
 # Token management
 # ---------------------------------------------------------------------------
 
-def _row_to_response(row: Any, entity_ids: list[str] | None = None) -> dict:
+def _row_to_response(row: Any, entity_ids: list[str] | None = None, proximity_entity_ids: set[str] | None = None) -> dict:
     ip_raw = row["ip_allowlist"]
     ip_list = json.loads(ip_raw) if ip_raw else None
     if entity_ids is not None:
@@ -96,6 +95,12 @@ def _row_to_response(row: Any, entity_ids: list[str] | None = None) -> dict:
     else:
         count = 0
     access_code = row["access_code"] if "access_code" in row.keys() else None
+    if proximity_entity_ids is not None:
+        has_proximity = bool(proximity_entity_ids)
+    elif "proximity_count" in row.keys():
+        has_proximity = row["proximity_count"] > 0
+    else:
+        has_proximity = False
     return {
         "id": row["id"],
         "slug": row["slug"],
@@ -110,7 +115,8 @@ def _row_to_response(row: Any, entity_ids: list[str] | None = None) -> dict:
         "entity_ids": entity_ids,
         "pin": row["pin"] if "pin" in row.keys() else None,
         "remember_pin": bool(row["remember_pin"]) if "remember_pin" in row.keys() else True,
-        "require_proximity": bool(row["require_proximity"]) if "require_proximity" in row.keys() else False,
+        "require_proximity": has_proximity,
+        "proximity_entity_ids": sorted(proximity_entity_ids) if proximity_entity_ids is not None else None,
         "has_access_code": bool(access_code),
         "access_code": access_code,
     }
@@ -181,6 +187,12 @@ async def create_token(
             detail=f"Slug '{slug}' already exists",
         )
 
+    if not set(body.proximity_entity_ids) <= set(body.entity_ids):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="proximity_entity_ids must be a subset of entity_ids",
+        )
+
     row = await db.create_token(
         label=body.label,
         slug=slug,
@@ -190,10 +202,11 @@ async def create_token(
         starts_at=body.starts_at,             # NEW
         pin=body.pin,
         remember_pin=body.remember_pin,
-        require_proximity=body.require_proximity,
+        proximity_entity_ids=body.proximity_entity_ids,
     )
     entity_ids = await db.get_token_entities(row["id"])
-    return _row_to_response(row, entity_ids)
+    proximity_entity_ids = await db.get_proximity_entity_ids(row["id"])
+    return _row_to_response(row, entity_ids, proximity_entity_ids)
 
 
 @router.get("/tokens/{token_id}")
@@ -202,7 +215,8 @@ async def get_token(token_id: str, _: str = Depends(require_admin)) -> dict:
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     entity_ids = await db.get_token_entities(token_id)
-    return _row_to_response(row, entity_ids)
+    proximity_entity_ids = await db.get_proximity_entity_ids(token_id)
+    return _row_to_response(row, entity_ids, proximity_entity_ids)
 
 
 @router.patch("/tokens/{token_id}/entities")
@@ -219,11 +233,17 @@ async def update_token_entities(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot edit entities on a revoked token",
         )
-    await db.update_token_entities(token_id, body.entity_ids)
+    if not set(body.proximity_entity_ids) <= set(body.entity_ids):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="proximity_entity_ids must be a subset of entity_ids",
+        )
+    await db.update_token_entities(token_id, body.entity_ids, body.proximity_entity_ids)
     await ha_client.invalidate_entity_cache(token_id)
     entity_ids = await db.get_token_entities(token_id)
+    proximity_entity_ids = await db.get_proximity_entity_ids(token_id)
     row = await db.get_token_by_id(token_id)
-    return _row_to_response(row, entity_ids)
+    return _row_to_response(row, entity_ids, proximity_entity_ids)
 
 
 @router.patch("/tokens/{token_id}/expiry")
@@ -288,7 +308,8 @@ async def rotate_token_slug(token_id: str, _: str = Depends(require_admin)) -> d
     await db.rotate_token_slug(token_id, new_slug)
     row = await db.get_token_by_id(token_id)
     entity_ids = await db.get_token_entities(token_id)
-    return _row_to_response(row, entity_ids)
+    proximity_entity_ids = await db.get_proximity_entity_ids(token_id)
+    return _row_to_response(row, entity_ids, proximity_entity_ids)
 
 
 @router.patch("/tokens/{token_id}/pin")
@@ -306,20 +327,6 @@ async def update_token_pin(
     # for it, so drop it too.
     if not body.pin:
         await db.clear_token_access_code(token_id)
-    row = await db.get_token_by_id(token_id)
-    return _row_to_response(row)
-
-
-@router.patch("/tokens/{token_id}/proximity")
-async def update_token_proximity(
-    token_id: str,
-    body: TokenUpdateProximityRequest,
-    _: str = Depends(require_admin),
-) -> dict:
-    row = await db.get_token_by_id(token_id)
-    if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    await db.update_token_proximity(token_id, body.require_proximity)
     row = await db.get_token_by_id(token_id)
     return _row_to_response(row)
 
