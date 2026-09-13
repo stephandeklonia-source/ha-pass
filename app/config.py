@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     supervisor_token: str = ""
     guest_url: str = ""
     encryption_key: str = ""  # 64 hex chars; auto-generated/persisted by run.sh
+    git_sha: str = "dev"  # stamped in at image build — busts stale-cached static assets
 
     @model_validator(mode="after")
     def _require_credentials_in_standalone(self):

@@ -10,7 +10,7 @@
 <meta name="theme-color" content="{{ brand_bg }}" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="{{ brand_bg_dark }}" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="{{ base_path }}/g/{{ slug }}/manifest.json" crossorigin="use-credentials">
-<link rel="apple-touch-icon" href="{{ base_path }}/static/icons/icon-192.png">
+<link rel="apple-touch-icon" href="{{ base_path }}/static/icons/icon-192.png?v={{ asset_version }}">
 {% endblock %}
 
 {% block fouc_extra %}
@@ -245,9 +245,9 @@
 {% endblock %}
 
 {% block body_scripts %}
-<script src="{{ base_path }}/static/util.js"></script>
-<script src="{{ base_path }}/static/domains.js"></script>
-<script src="{{ base_path }}/static/theme.js"></script>
+<script src="{{ base_path }}/static/util.js?v={{ asset_version }}"></script>
+<script src="{{ base_path }}/static/domains.js?v={{ asset_version }}"></script>
+<script src="{{ base_path }}/static/theme.js?v={{ asset_version }}"></script>
 <script nonce="{{ csp_nonce }}">
 requestAnimationFrame(updateThemeToggles);
 

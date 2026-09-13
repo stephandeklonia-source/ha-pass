@@ -19,4 +19,8 @@ def base_context(request: Request) -> dict:
         "brand_css": brand_css,
         "csp_nonce": request.state.csp_nonce,
         "base_path": request.state.ingress_path,
+        # Cache-busting query param for static assets — without it, browsers
+        # (and any caching reverse proxy in front of the guest link) can
+        # keep serving a stale dist.css/util.js/etc. across releases.
+        "asset_version": settings.git_sha[:8],
     }

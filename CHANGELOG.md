@@ -46,6 +46,15 @@ Implements [Rohithkadaveru/ha-pass#6](https://github.com/Rohithkadaveru/ha-pass/
   guarantee — the guest's browser self-reports its coordinates, same
   caveat as the existing IP allowlist.
 
+### Fixed
+- **Stale-cached static assets after an update** — `dist.css` and the JS
+  files had no cache-busting, so a browser (or a caching reverse proxy in
+  front of a custom guest URL) could keep serving an old cached copy
+  after upgrading, making the guest page look completely unstyled with
+  every normally-hidden section shown stacked on the page at once. Every
+  static asset URL now carries a `?v=<build>` query param that changes
+  with each image build, so updates are always picked up.
+
 ## [2026.7.8] — fork release
 
 ### Added
