@@ -9,32 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Starting with this release, versions follow Home Assistant Core's
 `YYYY.M.PATCH` scheme instead of semver.
 
-## [2026.7.12] — fork release
-
-### Changed
-- **Proximity requirement is now per-entity, not per-token/domain** — the
-  "require proximity" check (introduced in 2026.7.9) was hardcoded to
-  the lock and alarm_control_panel domains. It's now a toggle on each
-  individual entity in the entity picker (tap the location pin next to a
-  selected entity), so it can be attached to any entity — for example a
-  helper button wired to a door relay (`input_button.open_door`) —
-  without gating every other entity of that domain in the same token.
-  Existing tokens that had the old blanket toggle on keep it for their
-  lock/alarm entities automatically.
-
-## [2026.7.11] — fork release
-
-### Added
-- **Helper entities are now assignable to guest tokens** — all of Home
-  Assistant's Helpers (Settings → Devices & Services → Helpers) are now
-  supported, each with its own guest control widget: Number (slider),
-  Text, Dropdown (select), Date/Time, Button, Counter (+/− /reset), and
-  Timer (start/pause/cancel). Groups are also supported, controlled the
-  same way as a switch. Schedules are read-only (shown as active/inactive,
-  matching how sensors already work) since there's no safe simple guest
-  action for them.
-
-## [2026.7.10] — fork release
+## [2026.9.1] — fork release
 
 Implements [Rohithkadaveru/ha-pass#6](https://github.com/Rohithkadaveru/ha-pass/issues/6).
 
@@ -51,22 +26,25 @@ Implements [Rohithkadaveru/ha-pass#6](https://github.com/Rohithkadaveru/ha-pass/
   the same room) without rebuilding the token from scratch. Any existing
   bypass access-code is cleared as part of the rotation, since it was
   minted for the old link.
-
-## [2026.7.9] — fork release
-
-### Added
-- **Proximity requirement for locks/alarm** — a per-token option (default:
-  off) that requires the guest's browser to report a location inside Home
-  Assistant's home zone before a lock or alarm command is allowed. Only
-  gates `lock` and `alarm_control_panel` domains — lights, climate, etc.
-  keep working from anywhere. The home location/radius is read
-  automatically from HA's `zone.home`, no extra configuration needed.
-  Requires HTTPS on the guest link (browsers only expose geolocation on
-  a secure context). Note this is a soft gate, not a hard guarantee — the
-  guest's browser self-reports its coordinates, same caveat as the
-  existing IP allowlist.
-- Toggle it when creating a token, or later from a button on the token
-  card in the admin dashboard.
+- **Helper entities are now assignable to guest tokens** — all of Home
+  Assistant's Helpers (Settings → Devices & Services → Helpers) are now
+  supported, each with its own guest control widget: Number (slider),
+  Text, Dropdown (select), Date/Time, Button, Counter (+/− /reset), and
+  Timer (start/pause/cancel). Groups are also supported, controlled the
+  same way as a switch. Schedules are read-only (shown as active/inactive,
+  matching how sensors already work) since there's no safe simple guest
+  action for them.
+- **Proximity requirement, per entity** — tap the location pin next to a
+  selected entity in the picker to require the guest's browser to report
+  a location inside Home Assistant's home zone before that entity's
+  command is allowed. Works for any entity, not just locks/alarm — for
+  example a helper button wired to a door relay
+  (`input_button.open_door`) can be gated without affecting other
+  buttons in the same token. Home location/radius is read automatically
+  from HA's `zone.home`. Requires HTTPS on the guest link (browsers only
+  expose geolocation on a secure context). Soft gate, not a hard
+  guarantee — the guest's browser self-reports its coordinates, same
+  caveat as the existing IP allowlist.
 
 ## [2026.7.8] — fork release
 
