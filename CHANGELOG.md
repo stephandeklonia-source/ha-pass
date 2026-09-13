@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Starting with this release, versions follow Home Assistant Core's
 `YYYY.M.PATCH` scheme instead of semver.
 
-## [2026.9.1] — fork release
+## [2026.9.2] — fork release
 
 Implements [Rohithkadaveru/ha-pass#6](https://github.com/Rohithkadaveru/ha-pass/issues/6).
 
@@ -47,13 +47,27 @@ Implements [Rohithkadaveru/ha-pass#6](https://github.com/Rohithkadaveru/ha-pass/
   caveat as the existing IP allowlist.
 
 ### Fixed
-- **Stale-cached static assets after an update** — `dist.css` and the JS
-  files had no cache-busting, so a browser (or a caching reverse proxy in
-  front of a custom guest URL) could keep serving an old cached copy
-  after upgrading, making the guest page look completely unstyled with
-  every normally-hidden section shown stacked on the page at once. Every
-  static asset URL now carries a `?v=<build>` query param that changes
-  with each image build, so updates are always picked up.
+- **Stale-cached static assets after an update** — `dist.css`, the JS
+  files, and the PWA manifest's icon URLs had no cache-busting, so a
+  browser (or a caching reverse proxy in front of a custom guest URL)
+  could keep serving an old cached copy after upgrading, making the guest
+  page look completely unstyled with every normally-hidden section shown
+  stacked on the page at once. Every static asset URL, including the
+  ones inside `manifest.json`, now carries a `?v=<build>` query param
+  that changes with each image build, so updates are always picked up.
+- **Service worker cache missed on every request after the above fix** —
+  the install-time precache keyed assets by their plain `/static/...`
+  path, but pages now request them with a `?v=<build>` suffix, so the
+  cache-first lookup never matched and fell through to network on every
+  load. The lookup now ignores the query string when matching, so the
+  precached copies are used as intended (release-to-release staleness is
+  still handled by the service worker's own versioned cache name).
+- **Docker build cache busted on every commit** — `GIT_SHA` was set as a
+  runtime `ENV` before the `pip install` and app-copy layers, so its
+  per-commit value invalidated the Docker/GHA layer cache for those
+  layers on every release build. Moved to the end of the runtime stage
+  so dependency installs and file copies can still be cached between
+  releases.
 
 ## [2026.7.8] — fork release
 

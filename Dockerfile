@@ -27,11 +27,6 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Same GIT_SHA the builder stamped into sw.js — exposed at runtime so the
-# app can append it as a cache-busting query param on static asset URLs.
-ARG GIT_SHA=dev
-ENV GIT_SHA=${GIT_SHA}
-
 COPY --from=builder /build/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -51,5 +46,11 @@ EXPOSE 5880
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=15s \
   CMD python -c "import urllib.request,os; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\",5880)}/health')"
+
+# Same GIT_SHA the builder stamped into sw.js — exposed at runtime so the
+# app can append it as a cache-busting query param on static asset URLs.
+# Kept last so it doesn't bust the pip-install/COPY layer cache on every commit.
+ARG GIT_SHA=dev
+ENV GIT_SHA=${GIT_SHA}
 
 CMD ["/app/run.sh"]

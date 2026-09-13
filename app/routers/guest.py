@@ -429,6 +429,7 @@ async def guest_pin_submit(
 @router.get("/{slug}/manifest.json")
 async def guest_manifest(request: Request, slug: str = Path(max_length=64)):
     bp = request.state.ingress_path
+    v = settings.git_sha[:8]
     manifest = {  # colors must match static/input.css
         "name": settings.app_name,
         "short_name": settings.app_name[:12],
@@ -440,13 +441,13 @@ async def guest_manifest(request: Request, slug: str = Path(max_length=64)):
         "theme_color": settings.brand_primary,
         "orientation": "portrait",
         "icons": [
-            {"src": f"{bp}/static/icons/icon-192.png", "sizes": "192x192",
+            {"src": f"{bp}/static/icons/icon-192.png?v={v}", "sizes": "192x192",
              "type": "image/png", "purpose": "any"},
-            {"src": f"{bp}/static/icons/icon-512.png", "sizes": "512x512",
+            {"src": f"{bp}/static/icons/icon-512.png?v={v}", "sizes": "512x512",
              "type": "image/png", "purpose": "any"},
-            {"src": f"{bp}/static/icons/icon-maskable-192.png", "sizes": "192x192",
+            {"src": f"{bp}/static/icons/icon-maskable-192.png?v={v}", "sizes": "192x192",
              "type": "image/png", "purpose": "maskable"},
-            {"src": f"{bp}/static/icons/icon-maskable-512.png", "sizes": "512x512",
+            {"src": f"{bp}/static/icons/icon-maskable-512.png?v={v}", "sizes": "512x512",
              "type": "image/png", "purpose": "maskable"},
         ],
     }
