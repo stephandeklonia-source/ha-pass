@@ -544,11 +544,17 @@ function buildCard(eid, state) {
   else if (domain === 'cover') controls = buildCoverControls(eid, state);
   else if (domain === 'fan') controls = buildFanControls(eid, state);
   else if (domain === 'alarm_control_panel') controls = buildAlarmControls(eid, state);
-  else if (domain === 'button') controls = buildButtonControls(eid, state);
+  else if (domain === 'button' || domain === 'input_button') controls = buildButtonControls(eid, state, domain);
   else if (domain === 'time') controls = buildTimeControls(eid, state);
   else if (domain === 'datetime') controls = buildDatetimeControls(eid, state);
+  else if (domain === 'input_datetime') controls = buildInputDatetimeControls(eid, state);
+  else if (domain === 'input_number') controls = buildInputNumberControls(eid, state);
+  else if (domain === 'input_text') controls = buildInputTextControls(eid, state);
+  else if (domain === 'input_select') controls = buildInputSelectControls(eid, state);
+  else if (domain === 'counter') controls = buildCounterControls(eid, state);
+  else if (domain === 'timer') controls = buildTimerControls(eid, state);
 
-  const hasToggle = ['light', 'switch', 'input_boolean', 'fan'].includes(domain);
+  const hasToggle = ['light', 'switch', 'input_boolean', 'fan', 'group'].includes(domain);
   const toggleHtml = hasToggle ? `<div class="toggle-track ${stateStr === 'on' ? 'on' : ''}"
     role="switch" aria-checked="${stateStr === 'on'}" tabindex="0"
     aria-label="Toggle ${esc(name)}"
@@ -600,7 +606,7 @@ function formatState(domain, stateStr, state) {
   if (domain === 'lock') return stateStr === 'locked' ? 'Locked' : 'Unlocked';
   if (domain === 'cover') return esc(stateStr.charAt(0).toUpperCase() + stateStr.slice(1));
   if (domain === 'alarm_control_panel') return esc(ALARM_STATE_LABELS[stateStr] || (stateStr.charAt(0).toUpperCase() + stateStr.slice(1)));
-  if (domain === 'button') {
+  if (domain === 'button' || domain === 'input_button') {
     if (!stateStr || stateStr === 'unknown' || stateStr === 'unavailable') return 'Ready';
     return `Pressed ${timeAgo(new Date(stateStr).getTime() / 1000)}`;
   }
@@ -610,6 +616,34 @@ function formatState(domain, stateStr, state) {
     const d = new Date(stateStr);
     return isNaN(d) ? esc(stateStr) : esc(d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }));
   }
+  if (domain === 'input_datetime') {
+    if (!stateStr || stateStr === 'unknown') return 'Not set';
+    const hasDate = state.attributes?.has_date, hasTime = state.attributes?.has_time;
+    if (hasDate && hasTime) {
+      const d = new Date(stateStr.replace(' ', 'T'));
+      return isNaN(d) ? esc(stateStr) : esc(d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }));
+    }
+    if (hasDate) {
+      const d = new Date(stateStr + 'T00:00:00');
+      return isNaN(d) ? esc(stateStr) : esc(d.toLocaleDateString(undefined, { dateStyle: 'medium' }));
+    }
+    return esc(stateStr.slice(0, 5));
+  }
+  if (domain === 'input_number') {
+    const unit = state.attributes?.unit_of_measurement;
+    return unit ? `${esc(stateStr)} ${esc(unit)}` : esc(stateStr);
+  }
+  if (domain === 'input_text') {
+    if (!stateStr || stateStr === 'unknown') return '(empty)';
+    return esc(stateStr.length > 24 ? stateStr.slice(0, 24) + '…' : stateStr);
+  }
+  if (domain === 'input_select') return esc(stateStr);
+  if (domain === 'counter') return esc(stateStr);
+  if (domain === 'timer') {
+    const labels = { idle: 'Idle', active: 'Running', paused: 'Paused' };
+    return labels[stateStr] || esc(stateStr);
+  }
+  if (domain === 'schedule') return stateStr === 'on' ? 'Active' : 'Inactive';
   if (domain === 'fan') {
     const pct = state.attributes?.percentage;
     if (stateStr === 'on' && pct != null) return `On · ${pct}%`;
@@ -873,9 +907,9 @@ function buildAlarmControls(eid, state) {
   </div>`;
 }
 
-function buildButtonControls(eid, state) {
+function buildButtonControls(eid, state, domain) {
   return `<div class="mt-3">
-    <button data-action="press-button" data-eid="${esc(eid)}"
+    <button data-action="press-button" data-eid="${esc(eid)}" data-domain="${domain}"
       class="w-full py-3 rounded-xl border-2 border-accent/30 text-accent bg-accent/5 font-display font-semibold text-sm flex items-center justify-center gap-2 transition-colors active:scale-[0.98]">
       <span aria-hidden="true" class="material-symbols-outlined text-lg">radio_button_checked</span>
       Press
@@ -910,12 +944,163 @@ function buildDatetimeControls(eid, state) {
   </div>`;
 }
 
+// ── Helper Domain Controls ─────────────────────────────────────────────
+function buildInputDatetimeControls(eid, state) {
+  const hasDate = state.attributes?.has_date;
+  const hasTime = state.attributes?.has_time;
+  const value = state.state && state.state !== 'unknown' ? state.state : '';
+  let inputType, inputValue, mode;
+  if (hasDate && hasTime) {
+    mode = 'datetime'; inputType = 'datetime-local';
+    inputValue = value ? value.replace(' ', 'T').slice(0, 16) : '';
+  } else if (hasDate) {
+    mode = 'date'; inputType = 'date';
+    inputValue = value ? value.slice(0, 10) : '';
+  } else {
+    mode = 'time'; inputType = 'time';
+    inputValue = value ? value.slice(0, 5) : '';
+  }
+  return `<div class="mt-3 flex items-center gap-3">
+    <span aria-hidden="true" class="material-symbols-outlined text-base text-muted">event</span>
+    <input type="${inputType}" ${inputType === 'time' ? 'step="1"' : ''} value="${esc(inputValue)}"
+      id="idt-${cssId(eid)}" aria-label="Value" data-input-datetime-mode="${mode}" data-eid="${esc(eid)}"
+      class="flex-1 py-2 px-3 rounded-xl border border-border-light dark:border-border-dark bg-bg-light dark:bg-bg-dark text-sm">
+  </div>`;
+}
+
+function buildInputNumberControls(eid, state) {
+  const min = state.attributes?.min ?? 0;
+  const max = state.attributes?.max ?? 100;
+  const step = state.attributes?.step ?? 1;
+  const unit = state.attributes?.unit_of_measurement || '';
+  const value = state.state && state.state !== 'unknown' ? Number(state.state) : min;
+  return `<div class="mt-3">
+    <div class="flex items-center justify-between text-xs text-muted mb-1">
+      <span>${esc(String(min))}${esc(unit)}</span>
+      <span class="font-mono font-semibold text-ink dark:text-white" id="num-val-${cssId(eid)}">${esc(String(value))}${esc(unit)}</span>
+      <span>${esc(String(max))}${esc(unit)}</span>
+    </div>
+    <input type="range" min="${esc(String(min))}" max="${esc(String(max))}" step="${esc(String(step))}" value="${esc(String(value))}"
+      id="num-${cssId(eid)}" aria-label="Value"
+      data-range-action="input-number" data-eid="${esc(eid)}" data-display-id="num-val-${cssId(eid)}" data-unit="${esc(unit)}"
+      class="w-full accent-primary">
+  </div>`;
+}
+
+function buildInputTextControls(eid, state) {
+  const value = state.state && state.state !== 'unknown' ? state.state : '';
+  const maxlen = state.attributes?.max;
+  const isPassword = state.attributes?.mode === 'password';
+  return `<div class="mt-3">
+    <input type="${isPassword ? 'password' : 'text'}" value="${esc(value)}" ${maxlen ? `maxlength="${esc(String(maxlen))}"` : ''}
+      id="text-${cssId(eid)}" aria-label="Text value" data-text-action="input_text" data-eid="${esc(eid)}"
+      class="w-full py-2 px-3 rounded-xl border border-border-light dark:border-border-dark bg-bg-light dark:bg-bg-dark text-sm">
+  </div>`;
+}
+
+function buildInputSelectControls(eid, state) {
+  const options = state.attributes?.options || [];
+  const current = state.state;
+  return `<div class="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Select option">
+    ${options.map(o => `<button data-action="select-option" data-eid="${esc(eid)}" data-option="${esc(o)}"
+      role="radio" aria-checked="${current === o}"
+      class="px-3 py-1.5 rounded-full text-xs font-display font-semibold transition-colors ${current === o
+        ? 'bg-primary text-white' : 'bg-surface-light dark:bg-surface-dark text-muted border border-border-light dark:border-border-dark'}"
+      >${esc(o)}</button>`).join('')}
+  </div>`;
+}
+
+function buildCounterControls(eid, state) {
+  const value = state.state && state.state !== 'unknown' ? state.state : '0';
+  return `<div class="mt-3 flex items-center justify-center gap-4">
+    <button data-action="counter-action" data-eid="${esc(eid)}" data-counter-service="decrement" aria-label="Decrease"
+      class="w-11 h-11 rounded-full border-2 border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark flex items-center justify-center active:scale-95 transition-transform">
+      <span aria-hidden="true" class="material-symbols-outlined">remove</span>
+    </button>
+    <span class="text-2xl font-serif tabular-nums w-12 text-center" id="counter-val-${cssId(eid)}">${esc(value)}</span>
+    <button data-action="counter-action" data-eid="${esc(eid)}" data-counter-service="increment" aria-label="Increase"
+      class="w-11 h-11 rounded-full border-2 border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark flex items-center justify-center active:scale-95 transition-transform">
+      <span aria-hidden="true" class="material-symbols-outlined">add</span>
+    </button>
+    <button data-action="counter-action" data-eid="${esc(eid)}" data-counter-service="reset" aria-label="Reset"
+      class="w-11 h-11 rounded-full border-2 border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark flex items-center justify-center active:scale-95 transition-transform text-muted">
+      <span aria-hidden="true" class="material-symbols-outlined text-lg">restart_alt</span>
+    </button>
+  </div>`;
+}
+
+function formatDurationSeconds(totalSeconds) {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = Math.floor(totalSeconds % 60);
+  const pad = n => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+function timerRemainingLabel(state) {
+  const st = state.state;
+  if (st === 'active' && state.attributes?.finishes_at) {
+    const finishesAt = new Date(state.attributes.finishes_at).getTime();
+    const secs = Math.max(0, Math.round((finishesAt - Date.now()) / 1000));
+    return formatDurationSeconds(secs);
+  }
+  if (st === 'paused' && state.attributes?.remaining) {
+    const parts = state.attributes.remaining.split(':').map(Number);
+    const secs = parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : 0;
+    return formatDurationSeconds(secs);
+  }
+  return state.attributes?.duration || '--:--';
+}
+
+function buildTimerControls(eid, state) {
+  const st = state.state;
+  const label = timerRemainingLabel(state);
+  return `<div class="mt-3">
+    <div class="text-center text-2xl font-serif tabular-nums mb-3" id="timer-val-${cssId(eid)}">${esc(label)}</div>
+    <div class="grid ${st === 'idle' ? 'grid-cols-1' : 'grid-cols-2'} gap-2">
+      ${st === 'active'
+        ? `<button data-action="timer-action" data-eid="${esc(eid)}" data-timer-service="pause"
+            class="py-2.5 rounded-xl border-2 border-accent/30 text-accent bg-accent/5 font-display font-semibold text-sm flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform">
+            <span aria-hidden="true" class="material-symbols-outlined text-lg">pause</span>Pause</button>`
+        : `<button data-action="timer-action" data-eid="${esc(eid)}" data-timer-service="start"
+            class="py-2.5 rounded-xl border-2 border-accent/30 text-accent bg-accent/5 font-display font-semibold text-sm flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform">
+            <span aria-hidden="true" class="material-symbols-outlined text-lg">play_arrow</span>${st === 'paused' ? 'Resume' : 'Start'}</button>`}
+      ${st !== 'idle' ? `<button data-action="timer-action" data-eid="${esc(eid)}" data-timer-service="cancel"
+          class="py-2.5 rounded-xl border-2 border-primary/30 text-primary bg-primary/5 font-display font-semibold text-sm flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform">
+          <span aria-hidden="true" class="material-symbols-outlined text-lg">stop</span>Cancel</button>` : ''}
+    </div>
+  </div>`;
+}
+
 // ── Card Updates (live SSE) ──────────────────────────────────────────
+// These domains rebuild the whole card body on any update rather than
+// patching individual DOM nodes — their widgets (slider bounds, select
+// options, timer buttons) can change shape between states, unlike a
+// simple on/off toggle.
+const REPLACE_CARD_DOMAINS = ['input_number', 'input_text', 'input_select', 'input_datetime', 'counter', 'timer'];
+
+function replaceCardHtml(eid, state) {
+  const card = document.getElementById(`card-${cssId(eid)}`);
+  if (!card) return;
+  const parent = card.parentElement;
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = buildCard(eid, state);
+  parent.replaceChild(wrapper.firstElementChild, card);
+  const freshCard = document.getElementById(`card-${cssId(eid)}`);
+  if (freshCard) {
+    freshCard.classList.remove('pulse');
+    void freshCard.offsetWidth;
+    freshCard.classList.add('pulse');
+  }
+}
+
 function updateCard(eid, state) {
   const card = document.getElementById(`card-${cssId(eid)}`);
   if (!card) return;
 
   const domain = eid.split('.')[0];
+
+  if (REPLACE_CARD_DOMAINS.includes(domain)) { replaceCardHtml(eid, state); return; }
 
   const stateEl = document.getElementById(`state-${cssId(eid)}`);
   if (stateEl) stateEl.textContent = formatState(domain, state.state, state);
@@ -1231,7 +1416,7 @@ function sendToggle(eid, domain) {
 function sendBrightness(eid, pct) { sendCmd(eid, 'light', 'turn_on', { brightness: Math.round((parseInt(pct) / 100) * 255) }); }
 function sendMediaCmd(eid, service) { sendCmd(eid, 'media_player', service); }
 function sendVolume(eid, pct) { sendCmd(eid, 'media_player', 'volume_set', { volume_level: parseInt(pct) / 100 }); }
-function sendButtonPress(eid) { sendCmd(eid, 'button', 'press'); }
+function sendButtonPress(eid, domain) { sendCmd(eid, domain || 'button', 'press'); }
 function sendTimeValue(eid, value) {
   if (!value) return;
   sendCmd(eid, 'time', 'set_value', { time: value.length === 5 ? `${value}:00` : value });
@@ -1241,6 +1426,20 @@ function sendDatetimeValue(eid, value) {
   const formatted = value.replace('T', ' ') + (value.length === 16 ? ':00' : '');
   sendCmd(eid, 'datetime', 'set_value', { datetime: formatted });
 }
+function sendInputDatetimeValueFromInput(el) {
+  const eid = el.dataset.eid;
+  const mode = el.dataset.inputDatetimeMode;
+  const value = el.value;
+  if (!value) return;
+  if (mode === 'date') sendCmd(eid, 'input_datetime', 'set_datetime', { date: value });
+  else if (mode === 'time') sendCmd(eid, 'input_datetime', 'set_datetime', { time: value.length === 5 ? `${value}:00` : value });
+  else sendCmd(eid, 'input_datetime', 'set_datetime', { datetime: value.replace('T', ' ') + (value.length === 16 ? ':00' : '') });
+}
+function sendInputNumberValue(eid, value) { sendCmd(eid, 'input_number', 'set_value', { value: parseFloat(value) }); }
+function sendInputTextValue(eid, value) { sendCmd(eid, 'input_text', 'set_value', { value }); }
+function sendInputSelectOption(eid, option) { sendCmd(eid, 'input_select', 'select_option', { option }); }
+function sendCounterAction(eid, service) { sendCmd(eid, 'counter', service); }
+function sendTimerAction(eid, service) { sendCmd(eid, 'timer', service); }
 
 function setHvacMode(eid, mode) {
   sendCmd(eid, 'climate', 'set_hvac_mode', { hvac_mode: mode });
@@ -1416,7 +1615,16 @@ document.addEventListener('click', e => {
       closeAlarmSheet();
       break;
     case 'press-button':
-      sendButtonPress(eid);
+      sendButtonPress(eid, el.dataset.domain);
+      break;
+    case 'select-option':
+      sendInputSelectOption(eid, el.dataset.option);
+      break;
+    case 'counter-action':
+      sendCounterAction(eid, el.dataset.counterService);
+      break;
+    case 'timer-action':
+      sendTimerAction(eid, el.dataset.timerService);
       break;
     case 'set-theme':
       setTheme(el.dataset.theme);
@@ -1440,19 +1648,22 @@ document.addEventListener('input', e => {
   const el = e.target;
   if (!el.dataset.rangeAction) return;
   const display = document.getElementById(el.dataset.displayId);
-  if (display) display.textContent = el.value + '%';
+  if (display) display.textContent = el.value + (el.dataset.unit ?? '%');
 });
 
 document.addEventListener('change', e => {
   const el = e.target;
   if (el.dataset.timeAction === 'time') { sendTimeValue(el.dataset.eid, el.value); return; }
   if (el.dataset.timeAction === 'datetime') { sendDatetimeValue(el.dataset.eid, el.value); return; }
+  if (el.dataset.inputDatetimeMode) { sendInputDatetimeValueFromInput(el); return; }
+  if (el.dataset.textAction === 'input_text') { sendInputTextValue(el.dataset.eid, el.value); return; }
   if (!el.dataset.rangeAction) return;
   const eid = el.dataset.eid;
   const action = el.dataset.rangeAction;
   if (action === 'brightness') sendBrightness(eid, el.value);
   else if (action === 'volume') sendVolume(eid, el.value);
   else if (action === 'fan-speed') sendCmd(eid, 'fan', 'set_percentage', { percentage: parseInt(el.value) });
+  else if (action === 'input-number') sendInputNumberValue(eid, el.value);
 });
 
 // ── Color Wheel Drag ─────────────────────────────────────────────────

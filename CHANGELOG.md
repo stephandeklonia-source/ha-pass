@@ -9,6 +9,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Starting with this release, versions follow Home Assistant Core's
 `YYYY.M.PATCH` scheme instead of semver.
 
+## [2026.7.11] — fork release
+
+### Added
+- **Helper entities are now assignable to guest tokens** — all of Home
+  Assistant's Helpers (Settings → Devices & Services → Helpers) are now
+  supported, each with its own guest control widget: Number (slider),
+  Text, Dropdown (select), Date/Time, Button, Counter (+/− /reset), and
+  Timer (start/pause/cancel). Groups are also supported, controlled the
+  same way as a switch. Schedules are read-only (shown as active/inactive,
+  matching how sensors already work) since there's no safe simple guest
+  action for them.
+
 ## [2026.7.10] — fork release
 
 Implements [Rohithkadaveru/ha-pass#6](https://github.com/Rohithkadaveru/ha-pass/issues/6).
